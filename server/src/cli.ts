@@ -154,15 +154,10 @@ async function doctor(): Promise<number> {
   const { memoryService } = await import('../../memory/src/tools.js');
   const st = (await memoryService({ config: loadConfig })).stats();
   console.log(`  ok   memory: ${st.entries} entries, ${st.usedPercent}% of the limit (${st.limits.maxEntries} entries / ${st.limits.maxMB} MB)`);
-  const fs = await import('node:fs');
-  const os = await import('node:os');
-  const path = await import('node:path');
-  const vscodeMcp = path.join(process.env.APPDATA || path.join(os.homedir(), '.config'), 'Code', 'User', 'mcp.json');
-  const inVsCode = fs.existsSync(vscodeMcp) && fs.readFileSync(vscodeMcp, 'utf8').includes('"appforge"');
-  console.log(`  ${ok(inVsCode)} registered in VS Code (\`appforge register vscode\`)`);
-  const claudeJson = path.join(os.homedir(), '.claude.json');
-  const inClaude = fs.existsSync(claudeJson) && fs.readFileSync(claudeJson, 'utf8').includes('"appforge"');
-  console.log(`  ${inClaude ? 'ok  ' : '-   '} registered in Claude Code (\`appforge register claude\`, if you use it)`);
+  const { registeredIn } = await import('./clients.js');
+  const reg = registeredIn();
+  console.log(`  ${ok(reg.vscode)} registered in VS Code (\`appforge register vscode\`)`);
+  console.log(`  ${reg.claude ? 'ok  ' : '-   '} registered in Claude Code (\`appforge register claude\`, if you use it)`);
   return s.repos.pipelineBuilt ? 0 : 1;
 }
 

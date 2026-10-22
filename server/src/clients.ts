@@ -61,6 +61,11 @@ export function parseJsonc(text: string): unknown {
   return JSON.parse(out.replace(/,(\s*[}\]])/g, '$1') || '{}');
 }
 
+function outcome(r: 'changed' | 'unchanged', remove: boolean, before: unknown): ClientResult['status'] {
+  if (r === 'unchanged') return remove ? 'absent' : 'unchanged';
+  return remove ? 'removed' : before ? 'updated' : 'added';
+}
+
 function editJson(file: string, edit: (doc: Record<string, unknown>) => boolean): 'changed' | 'unchanged' {
   const exists = fs.existsSync(file);
   const raw = exists ? fs.readFileSync(file, 'utf8') : '';
@@ -107,9 +112,8 @@ function registerVsCode(remove: boolean): ClientResult[] {
         doc.inputs ??= [];
         return true;
       });
-      const status: ClientResult['status'] = r === 'unchanged' ? (remove ? 'absent' : 'unchanged') : remove ? 'removed' : before ? 'updated' : 'added';
       if (remove) dropIfEmpty(file);
-      return { client, status, detail: file };
+      return { client, status: outcome(r, remove, before), detail: file };
     } catch (e) {
       return { client, status: 'failed', detail: `${file}: ${e instanceof Error ? e.message : String(e)} (add it by hand: see README)` };
     }
@@ -157,8 +161,7 @@ function registerClaude(remove: boolean): ClientResult {
       servers[SERVER_NAME] = entry;
       return JSON.stringify(before) !== JSON.stringify(entry);
     });
-    const status: ClientResult['status'] = r === 'unchanged' ? (remove ? 'absent' : 'unchanged') : remove ? 'removed' : before ? 'updated' : 'added';
-    return { client: 'Claude Code', status, detail: claudeJson };
+    return { client: 'Claude Code', status: outcome(r, remove, before), detail: claudeJson };
   } catch (e) {
     return { client: 'Claude Code', status: 'failed', detail: e instanceof Error ? e.message : String(e) };
   }
@@ -170,6 +173,15 @@ export function registerClients(opts: { clients: string[]; remove?: boolean }): 
   if (want('vscode')) out.push(...registerVsCode(Boolean(opts.remove)));
   if (want('claude')) out.push(registerClaude(Boolean(opts.remove)));
   return out;
+}
+
+/** Whether AppForge is in VS Code's (any edition) and Claude Code's user configuration. */
+export function registeredIn(): { vscode: boolean; claude: boolean } {
+  const has = (file: string) => fs.existsSync(file) && fs.readFileSync(file, 'utf8').includes(`"${SERVER_NAME}"`);
+  return {
+    vscode: vscodeUserDirs().some(({ dir }) => has(path.join(dir, 'mcp.json'))),
+    claude: has(path.join(os.homedir(), '.claude.json')),
+  };
 }
 
 /** The JSON to paste into other MCP clients (Cursor, Windsurf, Gemini CLI, Codex, ...). */

@@ -164,6 +164,18 @@ export async function ghApi<T = unknown>(pathOrUrl: string, opts: { maxAgeSec?: 
   return JSON.parse(body) as T;
 }
 
+/** GET one file from raw.githubusercontent.com; null when it does not exist. */
+async function rawRequest(owner: string, repo: string, ref: string, filePath: string, timeoutMs: number): Promise<Response | null> {
+  const url = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${filePath.split('/').map(encodeURIComponent).join('/')}`;
+  const headers: Record<string, string> = { 'User-Agent': UA };
+  const t = githubToken();
+  if (t) headers.Authorization = `Bearer ${t}`;
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new GitHubError(`raw.githubusercontent.com ${res.status} for ${owner}/${repo}/${filePath}`, res.status);
+  return res;
+}
+
 /**
  * A file's text from raw.githubusercontent.com (no API quota). `ref` should be a commit SHA when possible: those
  * answers are cached forever. Returns null for a missing file.
@@ -175,13 +187,8 @@ export async function ghRaw(owner: string, repo: string, ref: string, filePath: 
     const row = cacheDb().prepare('SELECT body FROM raw WHERE key = ?').get(key) as { body: string } | undefined;
     if (row) return row.body;
   }
-  const url = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${filePath.split('/').map(encodeURIComponent).join('/')}`;
-  const headers: Record<string, string> = { 'User-Agent': UA };
-  const t = githubToken();
-  if (t) headers.Authorization = `Bearer ${t}`;
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(30_000) });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new GitHubError(`raw.githubusercontent.com ${res.status} for ${owner}/${repo}/${filePath}`, res.status);
+  const res = await rawRequest(owner, repo, ref, filePath, 30_000);
+  if (!res) return null;
   const body = await res.text();
   if (immutable) cacheDb().prepare('INSERT OR REPLACE INTO raw (key, body, fetched_at) VALUES (?, ?, ?)').run(key, body, Date.now());
   return body;
@@ -189,14 +196,8 @@ export async function ghRaw(owner: string, repo: string, ref: string, filePath: 
 
 /** A file's bytes (for installing: skills can carry images and fonts). Not cached. */
 export async function ghRawBuffer(owner: string, repo: string, ref: string, filePath: string): Promise<Buffer | null> {
-  const url = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${filePath.split('/').map(encodeURIComponent).join('/')}`;
-  const headers: Record<string, string> = { 'User-Agent': UA };
-  const t = githubToken();
-  if (t) headers.Authorization = `Bearer ${t}`;
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(60_000) });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new GitHubError(`raw.githubusercontent.com ${res.status} for ${owner}/${repo}/${filePath}`, res.status);
-  return Buffer.from(await res.arrayBuffer());
+  const res = await rawRequest(owner, repo, ref, filePath, 60_000);
+  return res ? Buffer.from(await res.arrayBuffer()) : null;
 }
 
 /** The commit SHA a branch (default: the repo's default branch) points at. Free when unchanged (ETag). */

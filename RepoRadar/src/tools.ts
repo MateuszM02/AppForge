@@ -75,6 +75,11 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   ]);
 }
 
+/** RepoRadar's evidence and assessment for one repository (needs a GitHub login), never waiting forever. */
+async function fullDetails(owner: string, repo: string, need: string | undefined, what: string) {
+  return withTimeout((await radar()).repoDetails(`${owner}/${repo}`, need), 150_000, what);
+}
+
 /**
  * Without a GitHub login RepoRadar's evidence step cannot run (it uses GitHub's GraphQL API, which needs one), so
  * this gives the basic facts from 2 REST calls and the README from raw.githubusercontent.com.
@@ -166,7 +171,7 @@ export function registerRepoTools(ctx: ForgeContext): void {
     safe(async (a) => {
       const { owner, repo } = parseRepo(a.repo);
       if (!githubToken()) return json(await basicDetails(owner, repo));
-      const d = await withTimeout((await radar()).repoDetails(`${owner}/${repo}`, a.need), 150_000, 'repo_details');
+      const d = await fullDetails(owner, repo, a.need, 'repo_details');
       if (!d) return fail(`Repository ${owner}/${repo} not found.`);
       const e = d.evidence as Record<string, unknown> & { readme?: string | null; candidate?: unknown };
       const readme = typeof e.readme === 'string' ? e.readme.slice(0, 3000) : null;
@@ -183,13 +188,12 @@ export function registerRepoTools(ctx: ForgeContext): void {
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     safe(async (a) => {
-      const r = await radar();
       const rows = await Promise.all(
         a.repos.map(async (ref) => {
           const { owner, repo } = parseRepo(ref);
           try {
             if (!githubToken()) return await basicDetails(owner, repo);
-            const d = await withTimeout(r.repoDetails(`${owner}/${repo}`, a.need), 150_000, 'repo_compare');
+            const d = await fullDetails(owner, repo, a.need, 'repo_compare');
             if (!d) return { repo: `${owner}/${repo}`, error: 'not found' };
             const c = d.evidence.candidate as Record<string, unknown>;
             const e = d.evidence as Record<string, unknown>;

@@ -124,12 +124,17 @@ export class MemoryService {
     }
   }
 
-  private projectName(key: string): string {
+  /** The project a store belongs to (PROJECT.json), or just its key when that file is missing. */
+  private readProject(key: string): ProjectRef {
     try {
-      return (JSON.parse(fs.readFileSync(path.join(this.projectRoot(key), 'PROJECT.json'), 'utf8')) as ProjectRef).name;
+      return JSON.parse(fs.readFileSync(path.join(this.projectRoot(key), 'PROJECT.json'), 'utf8')) as ProjectRef;
     } catch {
-      return key;
+      return { key, name: key, dir: null, remote: null };
     }
+  }
+
+  private projectName(key: string): string {
+    return this.readProject(key).name;
   }
 
   private rememberProject(p: ProjectRef): void {
@@ -256,15 +261,7 @@ export class MemoryService {
   async update(id: string, patch: { title?: string; body?: string; tags?: string[]; kind?: MemoryKind }): Promise<WriteResult> {
     const old = this.read(id);
     const where = this.locate(id);
-    const project = where.projectKey
-      ? ((): ProjectRef => {
-          try {
-            return JSON.parse(fs.readFileSync(path.join(where.root, 'PROJECT.json'), 'utf8')) as ProjectRef;
-          } catch {
-            return { key: where.projectKey!, name: where.projectKey!, dir: null, remote: null };
-          }
-        })()
-      : undefined;
+    const project = where.projectKey ? this.readProject(where.projectKey) : undefined;
     await hippoForget(where.root, where.hippoId);
     const res = await this.write({
       kind: patch.kind ?? (old.kind === 'note' ? 'fact' : old.kind),

@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { fail, safe, type ForgeContext } from '../../server/src/context.js';
+import { fail, json, safe, text, type ForgeContext } from '../../server/src/context.js';
 import { CamofoxManager } from './manager.js';
 
 let manager: CamofoxManager | null = null;
@@ -210,7 +210,7 @@ export function registerBrowserTools(ctx: ForgeContext): void {
     },
     safe(async (a) => {
       const r = await cf().request('POST', `/tabs/${encodeURIComponent(a.tabId)}/extract`, { userId: uid(), schema: a.schema });
-      return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
+      return json(r);
     }),
   );
 
@@ -224,16 +224,16 @@ export function registerBrowserTools(ctx: ForgeContext): void {
     },
     safe(async (a) => {
       if (a.action === 'list') {
-        if (!cf().running) return { content: [{ type: 'text', text: 'The browser is not running (no tabs).' }] };
+        if (!cf().running) return text('The browser is not running (no tabs).');
         const r = await cf().request('GET', `/tabs?${new URLSearchParams({ userId: uid() })}`);
-        return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
+        return json(r);
       }
       if (a.tabId) {
         await cf().request('DELETE', `/tabs/${encodeURIComponent(a.tabId)}?${new URLSearchParams({ userId: uid() })}`);
-        return { content: [{ type: 'text', text: `Closed tab ${a.tabId}.` }] };
+        return text(`Closed tab ${a.tabId}.`);
       }
       await cf().stop();
-      return { content: [{ type: 'text', text: 'Closed all tabs and stopped the browser.' }] };
+      return text('Closed all tabs and stopped the browser.');
     }),
   );
 
@@ -255,7 +255,7 @@ export function registerBrowserTools(ctx: ForgeContext): void {
       const cookies = parseNetscapeCookies(fs.readFileSync(a.file, 'utf8'), a.domain);
       if (!cookies.length) return fail('No cookies found in that file (for that domain).');
       await cf().request('POST', `/sessions/${encodeURIComponent(uid())}/cookies`, { cookies, sessionKey: a.session }, { auth: 'api' });
-      return { content: [{ type: 'text', text: `Imported ${cookies.length} cookies.` }] };
+      return text(`Imported ${cookies.length} cookies.`);
     }),
   );
 
@@ -270,7 +270,7 @@ export function registerBrowserTools(ctx: ForgeContext): void {
       },
       safe(async (a) => {
         const r = await cf().request('POST', `/tabs/${encodeURIComponent(a.tabId)}/evaluate`, { userId: uid(), expression: a.expression });
-        return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
+        return json(r);
       }),
     );
   }
