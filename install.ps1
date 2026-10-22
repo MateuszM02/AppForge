@@ -36,6 +36,16 @@ $toolBin = Join-Path $env:USERPROFILE ".local\bin"
 
 function Test-Command($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }
 
+# Runs a native program. Windows PowerShell 5.1 turns anything a program writes to stderr (git progress, npm
+# warnings) into an error when output is captured, which "Stop" would make fatal; success is judged by
+# $LASTEXITCODE instead. Output goes to the console, never into a function's return value.
+function Invoke-Native([scriptblock]$run) {
+    $saved = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $run 2>&1 | ForEach-Object { if ($_ -is [Management.Automation.ErrorRecord]) { Write-Host $_.Exception.Message } else { Write-Host $_ } } }
+    finally { $ErrorActionPreference = $saved }
+}
+
 # Yes/no question (default yes). Never blocks when nobody can answer.
 function Confirm-Step([string]$question) {
     if ($env:APPFORGE_AUTO_INSTALL -eq "1") { return $true }
@@ -65,12 +75,12 @@ function Get-AppDir {
     $dir = if ($env:APPFORGE_DIR) { $env:APPFORGE_DIR } else { Join-Path $base "app" }
     if (Test-Path (Join-Path $dir ".git")) {
         Write-Host "Updating AppForge in $dir (git pull)..."
-        git -C $dir pull --ff-only
+        Invoke-Native { git -C $dir pull --ff-only }
         if ($LASTEXITCODE -ne 0) { throw "git pull failed in $dir" }
     } elseif (Test-Command git) {
         if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
         Write-Host "Downloading AppForge to $dir (git clone)..."
-        git clone --depth 1 --branch $ref "https://github.com/$repo.git" $dir
+        Invoke-Native { git clone --depth 1 --branch $ref "https://github.com/$repo.git" $dir }
         if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
     } else {
         Write-Host "Downloading AppForge to $dir..."
@@ -139,9 +149,9 @@ function Build-AppForge([string]$dir, [string]$node) {
     Write-Host "Installing AppForge $($pkg.version) (built before: $was)..."
     Push-Location $dir
     try {
-        & $node $npm ci --no-audit --no-fund --loglevel=error
+        Invoke-Native { & $node $npm ci --no-audit --no-fund --loglevel=error }
         if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
-        & $node $npm run build --silent
+        Invoke-Native { & $node $npm run build --silent }
         if ($LASTEXITCODE -ne 0) { throw "build failed" }
     } finally { Pop-Location }
 }
@@ -165,7 +175,7 @@ function Invoke-Extras {
         Write-Host "The GitHub CLI (gh) is not installed. repo_search needs a GitHub login (5,000 requests an hour instead of 60);"
         Write-Host "the rest of AppForge works without it. You can also set a GITHUB_TOKEN environment variable instead."
         if ((Test-Command winget) -and (Confirm-Step "Install the GitHub CLI now?")) {
-            winget install --id GitHub.cli -e --source winget --silent --accept-package-agreements --accept-source-agreements
+            Invoke-Native { winget install --id GitHub.cli -e --source winget --silent --accept-package-agreements --accept-source-agreements }
             Update-SessionPath
             $ghDir = Join-Path $env:ProgramFiles "GitHub CLI"
             if (Test-Path $ghDir) { $env:PATH = "$ghDir;$env:PATH" }
@@ -174,13 +184,15 @@ function Invoke-Extras {
         }
     }
     if ((Test-Command gh) -and -not $env:GITHUB_TOKEN) {
-        gh auth status *> $null
+        Invoke-Native { gh auth status *> $null }
         if ($LASTEXITCODE -ne 0) {
             Write-Host ""
             if ($env:APPFORGE_AUTO_INSTALL -eq "1") {
                 Write-Host "Run 'gh auth login' to let repo_search use your GitHub account."
             } elseif (Confirm-Step "Log in to GitHub now? (opens your browser; read-only use)") {
+                $saved = $ErrorActionPreference; $ErrorActionPreference = "Continue"   # interactive: keeps the console
                 gh auth login --web --git-protocol https
+                $ErrorActionPreference = $saved
                 if ($LASTEXITCODE -ne 0) { Write-Warning "Login did not finish. Run 'gh auth login' later." }
             } else {
                 Write-Host "Skipped. Run 'gh auth login' later to use repo_search."
@@ -195,7 +207,7 @@ Build-AppForge $dir $node
 Install-Shim $dir $node
 
 if ($env:APPFORGE_MINIMAL -ne "1") {
-    & $node (Join-Path $dir "dist\server\src\cli.js") setup all
+    Invoke-Native { & $node (Join-Path $dir "dist\server\src\cli.js") setup all }
     if ($LASTEXITCODE -ne 0) { Write-Warning "Some downloads failed; retry later with: appforge setup" }
 }
 
@@ -203,11 +215,11 @@ Invoke-Extras
 
 if ($env:APPFORGE_NO_REGISTER -ne "1") {
     Write-Host ""
-    & $node (Join-Path $dir "dist\server\src\cli.js") register all
+    Invoke-Native { & $node (Join-Path $dir "dist\server\src\cli.js") register all }
 }
 
 Write-Host ""
-& $node (Join-Path $dir "dist\server\src\cli.js") doctor
+Invoke-Native { & $node (Join-Path $dir "dist\server\src\cli.js") doctor }
 Write-Host ""
 Write-Host "Done. Open VS Code (or Claude Code), start a chat in agent mode and ask, e.g.:"
 Write-Host "  'Use AppForge to find an open-source habit tracker I can extend.'"
