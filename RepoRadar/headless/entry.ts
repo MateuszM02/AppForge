@@ -8,6 +8,7 @@ import { runSearch } from '@/lib/pipeline/runSearch';
 import { serializeResult } from '@/lib/api/serialize';
 import { fetchCandidatesByName } from '@/lib/github/fetchRepos';
 import { enrichRepo } from '@/lib/github/enrich';
+import { octokit } from '@/lib/github/client';
 import { deterministicScore } from '@/lib/scoring/deterministic';
 import { heuristicIntent } from '@/lib/llm/intent';
 import { cosineSimilarity, embedMany } from '@/lib/embeddings/embedder';
@@ -53,6 +54,11 @@ export async function repoDetails(fullName: string, need?: string) {
   const [candidate] = await fetchCandidatesByName([fullName]);
   if (!candidate) return null;
   const evidence = await enrichRepo(candidate, 0);
+  // fetchCandidatesByName leaves openIssues at 0 (search results get it from the search API instead). GitHub's
+  // open_issues_count includes open pull requests, which enrichment counted separately.
+  const { data } = await octokit.rest.repos.get({ owner: candidate.owner, repo: candidate.name });
+  candidate.openIssues = Math.max(0, data.open_issues_count - evidence.openPRs);
+  evidence.openIssues = candidate.openIssues;
   if (need) {
     // The search funnel computes this for search results; for a single repo it is done here the same way.
     const repoText = [candidate.fullName, candidate.description, candidate.topics.join(' '), evidence.readme?.slice(0, 2000)].filter(Boolean).join('\n');

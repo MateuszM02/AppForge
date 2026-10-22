@@ -1,6 +1,6 @@
 {
   "name": "appforge",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "One local MCP server that helps any AI agent find, create and improve apps: stealth browser, semantic GitHub repo search, Anthropic skills and plugins, and a local memory.",
   "license": "MIT",
   "author": "MateuszM02",

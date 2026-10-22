@@ -1,6 +1,6 @@
 {
   "name": "appforge",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Workflow skills that use the AppForge MCP server (memory, repo search, skills, stealth browser).",
   "author": { "name": "MateuszM02" },
   "homepage": "https://github.com/MateuszM02/AppForge",
