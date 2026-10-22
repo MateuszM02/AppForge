@@ -40,10 +40,22 @@ interface Snapshot {
   screenshot?: { data?: string; mimeType?: string };
 }
 
-function snapshotResult(tabId: string, s: Snapshot, prefix = ''): CallToolResult {
+/**
+ * A snapshot as a tool answer, cut at `maxChars` (on a line break) so one page cannot flood the agent's context.
+ * camofox's offset counts characters of its whole snapshot, so the rest is read with offset + what was shown.
+ */
+function snapshotResult(tabId: string, s: Snapshot, prefix = '', maxChars = Infinity, offset = 0): CallToolResult {
+  let body = s.snapshot ?? '';
+  // camofox applies offset only to pages longer than its own window; for shorter ones it returns the whole page.
+  if (!s.truncated && offset > 0) body = body.slice(offset);
+  if (body.length > maxChars) {
+    const cut = Math.max(body.lastIndexOf('\n', maxChars), Math.floor(maxChars / 2));
+    body = body.slice(0, cut);
+    s = { ...s, hasMore: true, nextOffset: offset + cut };
+  }
   const more = s.hasMore ? `\n\n[Page continues: call browser_snapshot with tabId=${tabId} offset=${s.nextOffset}]` : '';
   const content: CallToolResult['content'] = [
-    { type: 'text', text: `${prefix}tab ${tabId} | ${s.url ?? ''} | ${s.refsCount ?? 0} refs\n\n${s.snapshot ?? ''}${more}` },
+    { type: 'text', text: `${prefix}tab ${tabId} | ${s.url ?? ''} | ${s.refsCount ?? 0} refs\n\n${body}${more}` },
   ];
   if (s.screenshot?.data) content.push({ type: 'image', data: s.screenshot.data, mimeType: s.screenshot.mimeType ?? 'image/png' });
   return { content };
@@ -97,7 +109,7 @@ export function registerBrowserTools(ctx: ForgeContext): void {
     },
     safe(async (a) => {
       const tab = await cf().request<{ tabId: string }>('POST', '/tabs', { url: a.url, userId: uid(), sessionKey: a.session ?? 'default' });
-      return snapshotResult(tab.tabId, await snap(tab.tabId));
+      return snapshotResult(tab.tabId, await snap(tab.tabId), '', ctx.config().browser.maxSnapshotChars);
     }),
   );
 
@@ -109,7 +121,7 @@ export function registerBrowserTools(ctx: ForgeContext): void {
       inputSchema: { tabId: z.string(), offset: z.number().int().min(0).optional(), screenshot: z.boolean().optional() },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    safe(async (a) => snapshotResult(a.tabId, await snap(a.tabId, a.offset, a.screenshot))),
+    safe(async (a) => snapshotResult(a.tabId, await snap(a.tabId, a.offset, a.screenshot), '', ctx.config().browser.maxSnapshotChars, a.offset ?? 0)),
   );
 
   server.registerTool(
@@ -156,7 +168,7 @@ export function registerBrowserTools(ctx: ForgeContext): void {
           await cf().request('POST', `/tabs/${tab}/scroll`, { userId: uid(), direction: a.direction ?? 'down', ...(a.amount ? { amount: a.amount } : {}) });
           break;
       }
-      return snapshotResult(a.tabId, await snap(a.tabId), `${a.action} done. `);
+      return snapshotResult(a.tabId, await snap(a.tabId), `${a.action} done. `, ctx.config().browser.maxSnapshotChars);
     }),
   );
 
@@ -182,7 +194,7 @@ export function registerBrowserTools(ctx: ForgeContext): void {
       else if (a.macro) await cf().request('POST', `/tabs/${tab}/navigate`, { userId: uid(), macro: a.macro, query: a.query ?? '' });
       else if (a.url) await cf().request('POST', `/tabs/${tab}/navigate`, { userId: uid(), url: a.url });
       else return fail('Give url, macro (+query) or history.');
-      return snapshotResult(a.tabId, await snap(a.tabId));
+      return snapshotResult(a.tabId, await snap(a.tabId), '', ctx.config().browser.maxSnapshotChars);
     }),
   );
 

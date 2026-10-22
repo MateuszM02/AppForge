@@ -60,6 +60,8 @@ export const DEFAULTS = {
   browser: {
     /** Stop the Camoufox browser after this many idle minutes (it starts again on the next browser call). */
     idleMinutes: 10,
+    /** Longest page snapshot returned at once, in characters (the rest is read with browser_snapshot offset). */
+    maxSnapshotChars: 15000,
     /** Fixed port for the camofox server; 0 = pick a free one. */
     port: 0,
   },

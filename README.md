@@ -184,6 +184,7 @@ setting can also be an environment variable `APPFORGE_<SECTION>_<KEY>` (e.g. `AP
 | `skills.communityCatalog` | false | also search ~9,000 community skills (bundled list from skills-mcp) |
 | `skills.syncHours` | 24 | how often skill sources are checked for changes |
 | `browser.idleMinutes` | 10 | stop the browser after this much idle time |
+| `browser.maxSnapshotChars` | 15000 | longest page snapshot returned at once; the rest comes with `browser_snapshot` offset |
 | `repos.waitSeconds` | 40 | how long `repo_search` waits before returning a job id |
 | `updateCheck` | true | look for a newer AppForge at start |
 

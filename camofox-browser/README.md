@@ -20,7 +20,7 @@ cache, using upstream's own `postinstall.js`.
 | Tool | What it does |
 |---|---|
 | `browser_open` | open a URL in a new tab; returns the tab id and the page snapshot |
-| `browser_snapshot` | the current snapshot; `offset` for long pages, `screenshot: true` for an image |
+| `browser_snapshot` | the current snapshot; long pages come in parts of `browser.maxSnapshotChars` (15,000) characters, read on with `offset`; `screenshot: true` adds an image |
 | `browser_act` | `click`, `type` (optional Enter), `press` a key, `select` an option, `scroll`; returns the new snapshot |
 | `browser_navigate` | go to a URL, run a search macro (`@google_search`, `@youtube_search`, `@reddit_search`, `@wikipedia_search`, ... 13 in all), or back / forward / refresh |
 | `browser_extract` | structured data with a JSON Schema whose properties point at refs (`"x-ref": "e14"`) |
