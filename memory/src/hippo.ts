@@ -45,7 +45,8 @@ export async function hippoRemember(
 ): Promise<{ id: string; warnings: string[]; duplicateOf?: string | null }> {
   const local = {
     ...(opts.pinned ? { pinned: true } : {}),
-    // A weak memory starts at half strength and decays twice as fast unless it proves useful.
+    // A weak memory has its half-life halved: it fades twice as fast unless it is used. (hippo recomputes strength
+    // from age and use, so the starting strength itself has no lasting effect.)
     ...(opts.weak ? { weaken: { strength: 0.5, halfLifeFactor: 0.5 } } : {}),
   };
   const result = await cliRequest(() => remember(ctx(root), { content, tags, local }));

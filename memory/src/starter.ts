@@ -1,4 +1,4 @@
-// The starter pack: a few general guidelines a fresh memory starts with. They are tagged "starter" and start weak,
+// The starter pack: a few general guidelines a fresh memory starts with. They are tagged "starter" and decay twice as fast,
 // so they fade away unless they turn out useful. `appforge memory reset --empty` removes them.
 
 import type { MemoryKind } from './memory.js';

@@ -45,7 +45,8 @@ Lowering the limit with `memory_config` applies it at once.
 
 A new memory starts with ~12 general guidelines (check memory first, look for an existing project or skill before
 building, prefer maintained permissive dependencies, verify before claiming done, Windows quoting, no secrets in
-git, ...), tagged `starter`. They start at half strength and fade twice as fast unless they prove useful.
+git, ...), tagged `starter`. Their half-life is halved, so they fade twice as fast unless they are used, and
+they count half when the limit picks what to archive.
 `appforge memory reset --empty` removes them for good; `memory.starterPack=false` prevents them.
 
 ## Files (for any LLM or person)
