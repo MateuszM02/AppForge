@@ -1,0 +1,14 @@
+{
+  "name": "appforge",
+  "owner": { "name": "MateuszM02" },
+  "metadata": { "description": "AppForge workflow skills for finding, creating and improving apps with AI agents." },
+  "plugins": [
+    {
+      "name": "appforge",
+      "description": "Workflow skills that use the AppForge MCP server: create-app, improve-app, find-app and remember. Install AppForge itself first (one command, see the README).",
+      "source": "./plugin",
+      "category": "development",
+      "homepage": "https://github.com/MateuszM02/AppForge"
+    }
+  ]
+}
