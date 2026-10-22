@@ -102,7 +102,8 @@ if (want('skills')) {
 if (want('repos')) {
   await step('repo_tree', async () => (await call('repo_tree', { repo: 'anthropics/skills' })).slice(0, 300));
   await step('repo_read_file', async () => (await call('repo_read_file', { repo: 'anthropics/skills', path: 'README.md' })).slice(0, 200));
-  await step('repo_details', async () => (await call('repo_details', { repo: 'jo-inc/camofox-browser' }, 180_000)).slice(0, 400));
+  await step('repo_details', async () => (await call('repo_details', { repo: 'jo-inc/camofox-browser' }, 200_000)).slice(0, 400));
+  await step('repo_compare', async () => (await call('repo_compare', { repos: ['jo-inc/camofox-browser', 'redf0x1/camofox-browser'] }, 400_000)).slice(0, 400));
   await step('repo_search', async () => (await call('repo_search', { need: 'markdown editor web component' }, 600_000)).slice(0, 800), 600_000);
 }
 

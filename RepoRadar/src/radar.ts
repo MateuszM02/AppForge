@@ -68,7 +68,7 @@ export async function startSearch(prompt: string, filters: RadarFilters): Promis
   if (!githubToken() && process.env.APPFORGE_ALLOW_ANONYMOUS_SEARCH !== '1') {
     throw new Error(
       'repo_search needs a GitHub login: one search makes about 100 GitHub API requests and GitHub allows 60 an hour without one. ' +
-        'Run `gh auth login` (GitHub CLI) or set GITHUB_TOKEN, then restart the MCP server. repo_tree, repo_read_file and repo_details work without it.',
+        'Run `gh auth login` (GitHub CLI) and try again, or set GITHUB_TOKEN and restart the MCP server. repo_tree, repo_read_file and repo_details work without it.',
     );
   }
   const r = await radar();

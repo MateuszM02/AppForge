@@ -17,9 +17,12 @@ const log = logger('github');
 const UA = 'AppForge (+https://github.com/MateuszM02/AppForge)';
 
 let tokenCache: string | null | undefined;
+let checkedAt = 0;
 
 export function githubToken(): string | null {
-  if (tokenCache !== undefined) return tokenCache;
+  // A missing token is looked for again after a minute, so `gh auth login` works without restarting the server.
+  if (tokenCache !== undefined && (tokenCache !== null || Date.now() - checkedAt < 60_000)) return tokenCache;
+  checkedAt = Date.now();
   tokenCache = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || null;
   if (!tokenCache) {
     try {

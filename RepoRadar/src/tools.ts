@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { CallToolResult, ServerNotification, ServerRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import { fail, json, safe, text, type ForgeContext } from '../../server/src/context.js';
-import { ghHeadSha, ghRaw, ghTree, parseRepo } from '../../server/src/github.js';
+import { githubToken, ghApi, ghHeadSha, ghRaw, ghTree, parseRepo } from '../../server/src/github.js';
 import { getSearch, isRunningHere, radar, startSearch, type RadarResult, type RadarSearch } from './radar.js';
 
 type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
@@ -53,6 +53,35 @@ async function waitFor(id: string, seconds: number, extra: Extra): Promise<Radar
     await new Promise((r) => setTimeout(r, 2000));
   }
   return last;
+}
+
+/** Rejects when `p` takes longer than `ms`, so a tool never hangs on GitHub's rate limiter. */
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${what} took longer than ${ms / 1000} s (GitHub may be rate-limiting; check forge_status).`)), ms).unref()),
+  ]);
+}
+
+/**
+ * Without a GitHub login RepoRadar's evidence step cannot run (it uses GitHub's GraphQL API, which needs one), so
+ * this gives the basic facts from 2 REST calls and the README from raw.githubusercontent.com.
+ */
+async function basicDetails(owner: string, repo: string) {
+  const meta = await ghApi<Record<string, unknown> & { default_branch: string; license?: { spdx_id?: string } | null }>(`/repos/${owner}/${repo}`, { maxAgeSec: 3600 });
+  const releases = await ghApi<Array<{ tag_name: string; published_at: string }>>(`/repos/${owner}/${repo}/releases?per_page=5`, { maxAgeSec: 3600 }).catch(() => []);
+  const sha = await ghHeadSha(owner, repo);
+  const readme = (await ghRaw(owner, repo, sha, 'README.md')) ?? (await ghRaw(owner, repo, sha, 'readme.md'));
+  return {
+    note: 'Basic facts only: log in to GitHub (gh auth login, or GITHUB_TOKEN) for the full evidence and risk analysis.',
+    repo: {
+      fullName: meta.full_name, description: meta.description, url: meta.html_url, stars: meta.stargazers_count, forks: meta.forks_count,
+      openIssues: meta.open_issues_count, language: meta.language, license: meta.license?.spdx_id ?? null, topics: meta.topics,
+      archived: meta.archived, fork: meta.fork, createdAt: meta.created_at, pushedAt: meta.pushed_at, homepage: meta.homepage,
+    },
+    recentReleases: releases.map((r) => ({ tag: r.tag_name, date: r.published_at })),
+    readme: readme ? readme.slice(0, 3000) : null,
+  };
 }
 
 export function registerRepoTools(ctx: ForgeContext): void {
@@ -123,7 +152,8 @@ export function registerRepoTools(ctx: ForgeContext): void {
     },
     safe(async (a) => {
       const { owner, repo } = parseRepo(a.repo);
-      const d = await (await radar()).repoDetails(`${owner}/${repo}`, a.need);
+      if (!githubToken()) return json(await basicDetails(owner, repo));
+      const d = await withTimeout((await radar()).repoDetails(`${owner}/${repo}`, a.need), 150_000, 'repo_details');
       if (!d) return fail(`Repository ${owner}/${repo} not found.`);
       const e = d.evidence as Record<string, unknown> & { readme?: string | null; candidate?: unknown };
       const readme = typeof e.readme === 'string' ? e.readme.slice(0, 3000) : null;
@@ -145,7 +175,8 @@ export function registerRepoTools(ctx: ForgeContext): void {
         a.repos.map(async (ref) => {
           const { owner, repo } = parseRepo(ref);
           try {
-            const d = await r.repoDetails(`${owner}/${repo}`, a.need);
+            if (!githubToken()) return await basicDetails(owner, repo);
+            const d = await withTimeout(r.repoDetails(`${owner}/${repo}`, a.need), 150_000, 'repo_compare');
             if (!d) return { repo: `${owner}/${repo}`, error: 'not found' };
             const c = d.evidence.candidate as Record<string, unknown>;
             const e = d.evidence as Record<string, unknown>;
