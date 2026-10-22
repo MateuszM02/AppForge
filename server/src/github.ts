@@ -8,6 +8,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { DatabaseSync } from 'node:sqlite';
 import { paths } from './paths.js';
 import { logger } from './log.js';
@@ -177,8 +178,33 @@ export async function ghRawBuffer(owner: string, repo: string, ref: string, file
 
 /** The commit SHA a branch (default: the repo's default branch) points at. Free when unchanged (ETag). */
 export async function ghHeadSha(owner: string, repo: string, ref = 'HEAD'): Promise<string> {
+  if (/^[0-9a-f]{40}$/.test(ref)) return ref;
+  // git's own protocol costs no API quota; the API (with ETag) is the fallback when git is missing.
+  const viaGit = lsRemote(owner, repo, ref);
+  if (viaGit) return viaGit;
   const commit = await ghApi<{ sha: string }>(`/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`);
   return commit.sha;
+}
+
+function lsRemote(owner: string, repo: string, ref: string): string | null {
+  try {
+    const r = spawnSync('git', ['ls-remote', `https://github.com/${owner}/${repo}.git`, ref], {
+      encoding: 'utf8',
+      timeout: 20_000,
+      windowsHide: true,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
+    });
+    if (r.status !== 0) return null;
+    const lines = r.stdout.trim().split('\n').map((l) => l.split('\t')) as Array<[string, string]>;
+    const want = ref === 'HEAD' ? ['HEAD'] : [`refs/heads/${ref}`, `refs/tags/${ref}^{}`, `refs/tags/${ref}`];
+    for (const w of want) {
+      const hit = lines.find((l) => l[1] === w);
+      if (hit && /^[0-9a-f]{40}$/.test(hit[0])) return hit[0];
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export interface TreeEntry {
@@ -190,12 +216,58 @@ export interface TreeEntry {
 
 /** Every file of a repo at a commit, in one request (cached forever per SHA). */
 export async function ghTree(owner: string, repo: string, sha: string): Promise<TreeEntry[]> {
-  const tree = await ghApi<{ tree: TreeEntry[]; truncated: boolean }>(
-    `/repos/${owner}/${repo}/git/trees/${sha}?recursive=1`,
-    { maxAgeSec: 365 * 24 * 3600 },
-  );
-  if (tree.truncated) log.warn(`tree of ${owner}/${repo} is truncated by GitHub (very large repo)`);
-  return tree.tree;
+  const key = `tarball-tree:${owner}/${repo}@${sha}`;
+  const cached = cacheDb().prepare('SELECT body FROM raw WHERE key = ?').get(key) as { body: string } | undefined;
+  if (cached) return JSON.parse(cached.body) as TreeEntry[];
+  try {
+    const tree = await ghApi<{ tree: TreeEntry[]; truncated: boolean }>(
+      `/repos/${owner}/${repo}/git/trees/${sha}?recursive=1`,
+      { maxAgeSec: 365 * 24 * 3600 },
+    );
+    if (!tree.truncated) return tree.tree;
+    log.warn(`tree of ${owner}/${repo} is truncated by GitHub; listing the tarball instead`);
+  } catch (e) {
+    if (!(e instanceof GitHubError) || (e.status !== 403 && e.status !== 429)) throw e;
+    log.warn(`GitHub API limit reached; listing ${owner}/${repo} from its tarball instead`);
+  }
+  const entries = await tarballTree(owner, repo, sha);
+  if (/^[0-9a-f]{40}$/.test(sha)) cacheDb().prepare('INSERT OR REPLACE INTO raw (key, body, fetched_at) VALUES (?, ?, ?)').run(key, JSON.stringify(entries), Date.now());
+  return entries;
+}
+
+/**
+ * File list of a repo from codeload.github.com's tarball (no API quota). Reads tar headers only; file bodies are
+ * skipped, never written anywhere.
+ */
+export async function tarballTree(owner: string, repo: string, ref: string): Promise<TreeEntry[]> {
+  const res = await fetch(`https://codeload.github.com/${owner}/${repo}/tar.gz/${ref}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(120_000) });
+  if (!res.ok) throw new GitHubError(`codeload ${res.status} for ${owner}/${repo}@${ref}`, res.status);
+  const tar = zlib.gunzipSync(Buffer.from(await res.arrayBuffer()));
+  const out: TreeEntry[] = [];
+  let longName: string | null = null;
+  for (let off = 0; off + 512 <= tar.length; ) {
+    const h = tar.subarray(off, off + 512);
+    if (h.every((b) => b === 0)) break;
+    const str = (a: number, b: number) => h.subarray(a, b).toString('utf8').replace(/\0.*$/s, '');
+    const size = parseInt(str(124, 136).trim() || '0', 8);
+    const type = String.fromCharCode(h[156]!);
+    const prefix = str(345, 500);
+    const body = tar.subarray(off + 512, off + 512 + size);
+    off += 512 + Math.ceil(size / 512) * 512;
+    if (type === 'x') {
+      const m = /\d+ path=([^\n]*)\n/.exec(body.toString('utf8'));
+      longName = m ? m[1]! : null;
+      continue;
+    }
+    if (type === 'g') continue;
+    const full = longName ?? (prefix ? `${prefix}/${str(0, 100)}` : str(0, 100));
+    longName = null;
+    const rel = full.split('/').slice(1).join('/').replace(/\/$/, '');
+    if (!rel) continue;
+    if (type === '5') out.push({ path: rel, type: 'tree', sha: '' });
+    else if (type === '0' || type === '\0' || type === '') out.push({ path: rel, type: 'blob', sha: '', size });
+  }
+  return out;
 }
 
 /** "owner/name", a GitHub URL or "owner/name/sub/path" -> owner and repo. */

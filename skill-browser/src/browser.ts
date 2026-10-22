@@ -78,7 +78,17 @@ export class SkillBrowser {
   async search(query: string, opts: { kind?: ItemKind; source?: string; limit?: number }) {
     await this.ensureSynced();
     const sources = opts.source ? [opts.source] : this.enabledSourceKeys();
-    return this.catalog.search(query, { kind: opts.kind, sources, limit: opts.limit ?? 15 });
+    const hits = this.catalog.search(query, { kind: opts.kind, sources, limit: opts.limit ?? 15 });
+    if (!hits.length) this.throwIfUnsynced(sources);
+    return hits;
+  }
+
+  /** "Nothing found" is misleading when a source could not be loaded at all: say why instead. */
+  private throwIfUnsynced(keys: string[]): void {
+    const broken = keys
+      .map((k) => ({ k, s: this.catalog.sourceState(k) }))
+      .filter(({ s }) => !s.sha && s.error);
+    if (broken.length) throw new Error(`Could not load skill sources: ${broken.map(({ k, s }) => `${k}: ${s.error}`).join('; ')}`);
   }
 
   /** By id, or by exact name when that is unambiguous. */
@@ -88,6 +98,7 @@ export class SkillBrowser {
     if (byId) return byId;
     const named = this.catalog.byName(idOrName).filter((i) => this.enabledSourceKeys().includes(i.source));
     if (named.length === 1) return named[0]!;
+    if (!named.length) this.throwIfUnsynced(this.enabledSourceKeys());
     if (named.length > 1) throw new Error(`"${idOrName}" matches several items; use one of these ids: ${named.map((n) => n.id).join(', ')}`);
     throw new Error(`No skill or plugin "${idOrName}". Search with skill_search first.`);
   }
@@ -172,7 +183,9 @@ export class SkillBrowser {
     const skillMd = await ghRaw(loc.owner, loc.repo, sha, `${loc.path}/SKILL.md`);
     if (!skillMd) throw new Error(`SKILL.md not found for ${item.id}`);
     const check = lint(skillMd);
-    const risky = check.security.flags.filter((f) => f === 'executes_scripts' || f === 'untrusted_install' || f === 'reads_secrets');
+    // Code blocks alone count as "executes scripts" for skillmd; that is reported, but only installs from untrusted
+    // places and reading secrets need the user's OK.
+    const risky = check.security.flags.filter((f) => f === 'untrusted_install' || f === 'reads_secrets');
     if (risky.length && !opts.acceptRisks) {
       return {
         installed: false,

@@ -69,8 +69,8 @@ export function registerSkillTools(ctx: ForgeContext): void {
       description:
         'Install for a client. Skills are copied into the client\'s skills folder (vscode: ~/.copilot/skills or ' +
         '.github/skills; claude: ~/.claude/skills or .claude/skills; ...). Plugins: Claude Code gets the /plugin ' +
-        'commands to run; other clients get the plugin\'s skills installed. Never runs code from the skill. A skill ' +
-        'that runs scripts or downloads things needs acceptRisks=true, which you should only pass after the user agreed.',
+        'commands to run; other clients get the plugin\'s skills installed. Never runs code from the skill. A skill that downloads ' +
+        'from untrusted places or reads secrets needs acceptRisks=true, which you should only pass after the user agreed.',
       inputSchema: {
         id: z.string(),
         client: z.enum(CLIENTS).describe('The agent that should use it: vscode (Copilot), claude (Claude Code), cursor, codex, gemini, generic (.agents/skills).'),

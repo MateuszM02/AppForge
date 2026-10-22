@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { CallToolResult, ServerNotification, ServerRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import { fail, json, safe, text, type ForgeContext } from '../../server/src/context.js';
-import { ghApi, ghHeadSha, ghRaw, ghTree, parseRepo } from '../../server/src/github.js';
+import { ghHeadSha, ghRaw, ghTree, parseRepo } from '../../server/src/github.js';
 import { getSearch, isRunningHere, radar, startSearch, type RadarResult, type RadarSearch } from './radar.js';
 
 type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
@@ -217,7 +217,7 @@ export function registerRepoTools(ctx: ForgeContext): void {
     },
     safe(async (a) => {
       const { owner, repo } = parseRepo(a.repo);
-      const ref = a.ref ?? (await ghApi<{ default_branch: string }>(`/repos/${owner}/${repo}`, { maxAgeSec: 86400 })).default_branch;
+      const ref = await ghHeadSha(owner, repo, a.ref ?? 'HEAD');
       const body = await ghRaw(owner, repo, ref, a.path.replace(/^\/+/, ''));
       if (body === null) return fail(`${a.path} not found in ${owner}/${repo}@${ref}. Use repo_tree to see the files.`);
       const start = a.offset ?? 0;
