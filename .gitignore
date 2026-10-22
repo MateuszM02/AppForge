@@ -5,3 +5,5 @@ dist/
 .DS_Store
 # runtime data never lives in the repo (see README "Where data lives")
 .appforge/
+# RepoRadar diagnostics if run from here without AppForge settings
+logs/

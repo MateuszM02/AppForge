@@ -31,6 +31,12 @@ const resolvePlugin = {
       const r = await b.resolve('./' + args.path.slice(2), { resolveDir: upstreamSrc, kind: args.kind });
       return r.errors.length ? { errors: r.errors } : { path: r.path };
     });
+    // Upstream writes logs/ under the current directory, which for an MCP server is often the user's project.
+    // At bundle time (files on disk unchanged) that directory becomes AppForge's cache folder instead.
+    b.onLoad({ filter: /RepoRadar[\\/]upstream[\\/]src[\\/].*\.ts$/ }, async (args) => {
+      const code = await fs.promises.readFile(args.path, 'utf8');
+      return { contents: code.replaceAll('process.cwd()', '(process.env.APPFORGE_RADAR_DB_DIR || process.cwd())'), loader: 'ts' };
+    });
   },
 };
 
