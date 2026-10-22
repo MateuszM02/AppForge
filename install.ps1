@@ -11,7 +11,7 @@
 #   2. Puts a private Node.js 24 LTS in %LOCALAPPDATA%\AppForge\node (checked against nodejs.org's SHA-256 list);
 #      your own Node, if any, is not touched.
 #   3. Installs the dependencies and builds AppForge (only when the version changed).
-#   4. Downloads the Camoufox browser (~300 MB) and two small ranking models (~50 MB).
+#   4. Downloads the Camoufox browser (~300 MB) and two ranking models (~180 MB).
 #   5. Adds the `appforge` command (%USERPROFILE%\.local\bin) and registers AppForge in VS Code and Claude Code.
 #   6. Offers to install the GitHub CLI and log in (needed for repo_search).
 # Safe to re-run to update. uninstall.ps1 removes it all again.

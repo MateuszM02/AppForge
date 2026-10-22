@@ -13,7 +13,7 @@ Usage: appforge <command>
   doctor                      check what works and what is missing
   register [clients]          add AppForge to vscode, claude or all (default all)
   unregister [clients]        remove it again
-  setup [browser|models|all]  download the Camoufox browser (~300 MB) and the ranking models (~50 MB)
+  setup [browser|models|all]  download the Camoufox browser (~300 MB) and the ranking models (~180 MB)
   memory stats|list|consolidate|reset [--empty]|path
   skills sync [--force] | skills list
   config list | config get <key> | config set <key> <value> | config path
@@ -103,7 +103,7 @@ async function setup(what: string): Promise<number> {
     }
   }
   if (what === 'models' || what === 'all') {
-    console.log('Downloading the repo-ranking models (about 50 MB)...');
+    console.log('Getting the repo-ranking models (about 180 MB the first time)...');
     try {
       const { prefetchModels } = await import('../../RepoRadar/src/radar.js');
       console.log(`Models ready: ${(await prefetchModels()).join(', ')}`);

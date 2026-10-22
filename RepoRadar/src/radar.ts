@@ -86,14 +86,14 @@ export function isRunningHere(id: string): boolean {
   return running.has(id);
 }
 
-/** Downloads the two small local models RepoRadar ranks with (about 50 MB, once). */
+/** Downloads the two local models RepoRadar ranks with (about 180 MB, once). */
 export async function prefetchModels(): Promise<string[]> {
   const t = await import('@huggingface/transformers');
   t.env.cacheDir = paths.models;
-  const embed = await t.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+  const embed = await t.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { dtype: 'fp32' });
   await embed('warm up', { pooling: 'mean', normalize: true });
   const rerank = process.env.RERANK_MODEL || 'Xenova/ms-marco-MiniLM-L-6-v2';
   await t.AutoTokenizer.from_pretrained(rerank);
-  await t.AutoModelForSequenceClassification.from_pretrained(rerank);
+  await t.AutoModelForSequenceClassification.from_pretrained(rerank, { dtype: 'fp32' });
   return ['Xenova/all-MiniLM-L6-v2', rerank];
 }
