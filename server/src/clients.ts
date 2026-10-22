@@ -72,6 +72,20 @@ function editJson(file: string, edit: (doc: Record<string, unknown>) => boolean)
   return 'changed';
 }
 
+/** After removing AppForge, an mcp.json with nothing left in it (as AppForge created it) is deleted. */
+function dropIfEmpty(file: string): void {
+  try {
+    const doc = parseJsonc(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    const emptyish = (v: unknown) => v === undefined || (Array.isArray(v) ? v.length === 0 : typeof v === 'object' && v !== null && Object.keys(v).length === 0);
+    if (Object.keys(doc).every((k) => (k === 'servers' || k === 'inputs') && emptyish(doc[k]))) {
+      fs.rmSync(file);
+      fs.rmSync(`${file}.appforge-backup`, { force: true });
+    }
+  } catch {
+    // leave it
+  }
+}
+
 function registerVsCode(remove: boolean): ClientResult[] {
   const dirs = vscodeUserDirs();
   if (!dirs.length) return [{ client: 'VS Code', status: 'not-installed' }];
@@ -94,6 +108,7 @@ function registerVsCode(remove: boolean): ClientResult[] {
         return true;
       });
       const status: ClientResult['status'] = r === 'unchanged' ? (remove ? 'absent' : 'unchanged') : remove ? 'removed' : before ? 'updated' : 'added';
+      if (remove) dropIfEmpty(file);
       return { client, status, detail: file };
     } catch (e) {
       return { client, status: 'failed', detail: `${file}: ${e instanceof Error ? e.message : String(e)} (add it by hand: see README)` };
