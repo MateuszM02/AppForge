@@ -10,6 +10,7 @@ import { fetchCandidatesByName } from '@/lib/github/fetchRepos';
 import { enrichRepo } from '@/lib/github/enrich';
 import { deterministicScore } from '@/lib/scoring/deterministic';
 import { heuristicIntent } from '@/lib/llm/intent';
+import { cosineSimilarity, embedMany } from '@/lib/embeddings/embedder';
 import type { SearchFilters } from '@/lib/types';
 
 if (process.env.APPFORGE_MODELS_DIR) transformersEnv.cacheDir = process.env.APPFORGE_MODELS_DIR;
@@ -52,6 +53,12 @@ export async function repoDetails(fullName: string, need?: string) {
   const [candidate] = await fetchCandidatesByName([fullName]);
   if (!candidate) return null;
   const evidence = await enrichRepo(candidate, 0);
+  if (need) {
+    // The search funnel computes this for search results; for a single repo it is done here the same way.
+    const repoText = [candidate.fullName, candidate.description, candidate.topics.join(' '), evidence.readme?.slice(0, 2000)].filter(Boolean).join('\n');
+    const [a, b] = await embedMany([need, repoText]);
+    evidence.similarity = Math.max(0, Math.min(1, cosineSimilarity(a!, b!)));
+  }
   const intent = heuristicIntent(need || candidate.description || candidate.name);
   const analysis = deterministicScore(intent, evidence);
   return { evidence, analysis };

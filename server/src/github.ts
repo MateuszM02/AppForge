@@ -24,16 +24,36 @@ export function githubToken(): string | null {
   if (tokenCache !== undefined && (tokenCache !== null || Date.now() - checkedAt < 60_000)) return tokenCache;
   checkedAt = Date.now();
   tokenCache = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || null;
-  if (!tokenCache) {
+  for (const gh of tokenCache ? [] : ghCandidates()) {
     try {
-      const r = spawnSync('gh', ['auth', 'token'], { encoding: 'utf8', timeout: 5000, windowsHide: true });
+      const r = spawnSync(gh, ['auth', 'token'], { encoding: 'utf8', timeout: 5000, windowsHide: true });
       const t = r.status === 0 ? r.stdout.trim() : '';
-      tokenCache = t || null;
+      if (t) {
+        tokenCache = t;
+        break;
+      }
     } catch {
-      tokenCache = null;
+      // not there; try the next place
     }
   }
   return tokenCache;
+}
+
+/**
+ * `gh` on PATH, then where its installers put it. An editor started before the GitHub CLI was installed keeps its
+ * old PATH, and so does the MCP server it starts.
+ */
+function ghCandidates(): string[] {
+  const out = ['gh'];
+  if (process.platform === 'win32') {
+    for (const base of [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs')]) {
+      if (base) out.push(path.join(base, 'GitHub CLI', 'gh.exe'));
+    }
+    if (process.env.USERPROFILE) out.push(path.join(process.env.USERPROFILE, 'scoop', 'shims', 'gh.exe'));
+  } else {
+    out.push('/opt/homebrew/bin/gh', '/usr/local/bin/gh', '/usr/bin/gh', '/home/linuxbrew/.linuxbrew/bin/gh', '/snap/bin/gh');
+  }
+  return out.filter((p) => p === 'gh' || fs.existsSync(p));
 }
 
 export interface RateInfo {

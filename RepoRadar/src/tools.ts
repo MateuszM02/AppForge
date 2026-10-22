@@ -31,11 +31,23 @@ function formatResult(r: RadarResult): string {
   return [head, desc, scores, summary, risks.length ? `   risks: ${risks.join('; ')}` : '', pushed, `   ${r.repo.url ?? ''}`].filter(Boolean).join('\n');
 }
 
+/**
+ * Licences asked for per search. RepoRadar only prefers them (a mismatch scores lower); the tool promises
+ * "allowed licences", so other licences are left out here, and the answer says how many.
+ */
+const licenceFilters = new Map<string, string[]>();
+
 function formatSearch(s: RadarSearch): string {
   if (s.status === 'failed') return `Search ${s.searchId} failed: ${s.error ?? 'unknown error'}`;
   if (s.status !== 'completed') return `Search ${s.searchId} is still running (${s.stage ?? s.status}, ${s.progress}%). Call repo_search_result with this id in a little while.`;
-  if (!s.results.length) return `No good matches for "${s.prompt}". Try describing the need differently or loosen the filters.`;
-  return `Best matches for "${s.prompt}" (scores 0-1; fit = matches the need, future = maintenance outlook, underrated = good but little known):\n\n${s.results.map(formatResult).join('\n\n')}\n\nNext: repo_details or repo_read_file to look closer.`;
+  const allowed = licenceFilters.get(s.searchId)?.map((l) => l.toLowerCase());
+  const results = allowed ? s.results.filter((r) => allowed.includes((r.repo.license ?? '').toLowerCase())) : s.results;
+  const others = s.results.filter((r) => !results.includes(r));
+  const hiddenNote = others.length
+    ? `\n\n(${others.length} more matched but have other licences: ${[...new Set(others.map((r) => r.repo.license ?? 'none'))].join(', ')}.)`
+    : '';
+  if (!results.length) return `No good matches for "${s.prompt}". Try describing the need differently or loosen the filters.${hiddenNote}`;
+  return `Best matches for "${s.prompt}" (scores 0-1; fit = matches the need, future = maintenance outlook, underrated = good but little known):\n\n${results.map(formatResult).join('\n\n')}${hiddenNote}\n\nNext: repo_details or repo_read_file to look closer.`;
 }
 
 async function waitFor(id: string, seconds: number, extra: Extra): Promise<RadarSearch | null> {
@@ -114,6 +126,7 @@ export function registerRepoTools(ctx: ForgeContext): void {
         license: a.license,
         includeSmallProjects: a.includeSmallProjects,
       });
+      if (a.license?.length) licenceFilters.set(id, a.license);
       const res = await waitFor(id, ctx.config().repos.waitSeconds, extra);
       return text(res ? formatSearch(res) : `Search started: ${id}. Call repo_search_result with this id.`);
     }),
