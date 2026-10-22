@@ -1,0 +1,119 @@
+{
+  "name": "hippo-memory",
+  "version": "2.1.0",
+  "description": "Make your agent's memory work like a brain. Hippo is long-term memory for coding agents.",
+  "mcpName": "io.github.kitfunso/hippo-memory",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./server": "./dist/server.js",
+    "./store-kit": "./dist/entry/store-kit.js",
+    "./testing": "./dist/entry/testing.js",
+    "./project-identity": "./dist/entry/project-identity.js",
+    "./json-hooks": "./dist/entry/json-hooks.js",
+    "./session-text": "./dist/entry/session-text.js"
+  },
+  "openclaw": {
+    "extensions": [
+      "./extensions/openclaw-plugin/index.ts"
+    ]
+  },
+  "bin": {
+    "hippo": "bin/hippo.js"
+  },
+  "files": [
+    "dist",
+    "!dist/src",
+    "!dist/**/*.map",
+    "dist-ui",
+    "bin",
+    "scripts/postinstall.cjs",
+    "openclaw.plugin.json",
+    "extensions/openclaw-plugin"
+  ],
+  "scripts": {
+    "baseline": "npm run build && npm test",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc && tsc -p tsconfig.benchmarks.json && tsc -p tsconfig.extensions.json",
+    "typecheck:tests": "tsc -p tsconfig.tests.json",
+    "check:dts": "node scripts/check-dts-diff.mjs",
+    "dev": "tsc --watch",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:delivery-ledger": "vitest run tests/delivery-ledger tests/migration-v55",
+    "test:eval": "vitest run --config vitest.eval.config.ts",
+    "lint": "oxlint",
+    "sbom": "node scripts/sbom.mjs",
+    "audit:security": "npm audit --audit-level=moderate && npm --prefix ui audit --audit-level=moderate",
+    "postinstall": "node scripts/postinstall.cjs",
+    "smoke:pack": "node scripts/smoke-pack.mjs",
+    "smoke:openclaw-install": "node scripts/smoke-openclaw-install.mjs",
+    "build:ui": "cd ui && npm install && npm run build",
+    "build:all": "npm run build && npm run build:ui",
+    "version": "node scripts/sync-version.mjs && node scripts/check-manifest-versions.mjs && node scripts/check-expiring-keys-floor.mjs",
+    "prepublishOnly": "node scripts/check-manifest-versions.mjs && node scripts/check-expiring-keys-floor.mjs && node scripts/changelog-fragments.mjs check && node scripts/check-em-dashes-in-release-notes.mjs && node scripts/check-graph-writes.mjs && npm run build:all && node scripts/check-openclaw-dist.mjs && npm run smoke:openclaw-install && node scripts/check-tests-pass.mjs"
+  },
+  "keywords": [
+    "memory",
+    "agent-memory",
+    "ai-memory",
+    "llm-memory",
+    "long-term-memory",
+    "persistent-memory",
+    "memory-layer",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "claude-code",
+    "claude",
+    "codex",
+    "cursor",
+    "openclaw",
+    "opencode",
+    "ai-agents",
+    "coding-agent",
+    "agents",
+    "llm",
+    "rag",
+    "retrieval",
+    "hybrid-search",
+    "embeddings",
+    "sqlite",
+    "local-first",
+    "cli",
+    "context",
+    "recall"
+  ],
+  "author": "Keith",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kitfunso/hippo-memory.git"
+  },
+  "homepage": "https://hippo-memory.com",
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "^1.78.0",
+    "@types/node": "^22.16.0",
+    "@vitest/coverage-v8": "^5.0.3",
+    "oxlint": "^1.78.0",
+    "typescript": "^5.4.0",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  },
+  "peerDependenciesMeta": {
+    "@xenova/transformers": {
+      "optional": true
+    },
+    "@huggingface/transformers": {
+      "optional": true
+    }
+  },
+  "overrides": {
+    "protobufjs": "7.6.4"
+  }
+}

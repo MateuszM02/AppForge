@@ -1,0 +1,237 @@
+import { DEFAULT_TENANT_ID } from '../util/env.js';
+import type { MemoryEntry } from '../core/memory.js';
+import { closeHippoDb, ftsRowCounts, openHippoDb, isFtsAvailable, repairFtsDrift } from '../db/index.js';
+import { fallbackOrigin, originFromSource } from '../core/project-identity.js';
+import { checkRejectionGuard } from './rejection.js';
+import { errorMessage, log, errorFields } from '../util/log.js';
+
+/** A 1.x JS caller's `tenantId` would otherwise fall through to the default tenant without a sound. */
+function rejectLegacyTenantKey(entry: MemoryEntry): void {
+  if (Object.hasOwn(entry, 'tenantId') && entry.tenant_id === undefined) {
+    throw new TypeError('tenantId was renamed to tenant_id in 2.0');
+  }
+}
+
+export function upsertEntryRow(db: ReturnType<typeof openHippoDb>, entry: MemoryEntry): void {
+  rejectLegacyTenantKey(entry);
+  checkRejectionGuard(db, entry.tenant_id ?? DEFAULT_TENANT_ID, entry.id, entry.content);
+  syncFtsRow(db, entry, upsertMemoryRow(db, entry));
+}
+
+/** The row alone, with no rejection guard or full-text row, for `upsertEntryRow` and for
+ * `batchWriteAndDelete`, which probes tombstones and indexes per batch. Returns whether the row is new. */
+export function upsertMemoryRow(db: ReturnType<typeof openHippoDb>, entry: MemoryEntry): boolean {
+  const isNewRow = db.prepare(`SELECT 1 FROM memories WHERE id = ?`).get(entry.id) === undefined;
+  db.prepare(UPSERT_MEMORY_SQL).run(...memoryRowValues(entry));
+  return isNewRow;
+}
+
+const UPSERT_MEMORY_SQL = `
+    INSERT INTO memories(
+      id, created, last_retrieved, retrieval_count, strength, half_life_days, layer,
+      tags_json, emotional_valence, schema_fit, source, outcome_score,
+      outcome_positive, outcome_negative,
+      conflicts_with_json, pinned, confidence, content,
+      parents_json, starred,
+      trace_outcome, source_session_id,
+      valid_from, superseded_by,
+      extracted_from,
+      dag_level, dag_parent_id,
+      kind, scope, owner, artifact_ref,
+      tenant_id, origin_project,
+      descendant_count, earliest_at, latest_at,
+      dag_level_3_built_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+    ?, ?, datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      created = excluded.created,
+      last_retrieved = excluded.last_retrieved,
+      retrieval_count = excluded.retrieval_count,
+      strength = excluded.strength,
+      half_life_days = excluded.half_life_days,
+      layer = excluded.layer,
+      tags_json = excluded.tags_json,
+      emotional_valence = excluded.emotional_valence,
+      schema_fit = excluded.schema_fit,
+      source = excluded.source,
+      outcome_score = excluded.outcome_score,
+      outcome_positive = excluded.outcome_positive,
+      outcome_negative = excluded.outcome_negative,
+      conflicts_with_json = excluded.conflicts_with_json,
+      pinned = excluded.pinned,
+      confidence = excluded.confidence,
+      content = excluded.content,
+      parents_json = excluded.parents_json,
+      starred = excluded.starred,
+      trace_outcome = excluded.trace_outcome,
+      source_session_id = excluded.source_session_id,
+      valid_from = excluded.valid_from,
+      superseded_by = excluded.superseded_by,
+      extracted_from = excluded.extracted_from,
+      dag_level = excluded.dag_level,
+      dag_parent_id = excluded.dag_parent_id,
+      kind = excluded.kind,
+      scope = excluded.scope,
+      owner = excluded.owner,
+      artifact_ref = excluded.artifact_ref,
+      tenant_id = excluded.tenant_id,
+      origin_project = excluded.origin_project,
+      descendant_count = excluded.descendant_count,
+      earliest_at = excluded.earliest_at,
+      latest_at = excluded.latest_at,
+      dag_level_3_built_at = excluded.dag_level_3_built_at,
+      updated_at = datetime('now')
+  `;
+
+/** Bind values for UPSERT_MEMORY_SQL, in its column order. */
+function memoryRowValues(entry: MemoryEntry): Array<string | number | null> {
+  return [
+    entry.id,
+    entry.created,
+    entry.last_retrieved,
+    entry.retrieval_count,
+    entry.strength,
+    entry.half_life_days,
+    entry.layer,
+    JSON.stringify(entry.tags ?? []),
+    entry.emotional_valence,
+    entry.schema_fit,
+    entry.source,
+    entry.outcome_score,
+    entry.outcome_positive ?? 0,
+    entry.outcome_negative ?? 0,
+    JSON.stringify(entry.conflicts_with ?? []),
+    entry.pinned ? 1 : 0,
+    entry.confidence,
+    entry.content,
+    JSON.stringify(entry.parents ?? []),
+    entry.starred ? 1 : 0,
+    entry.trace_outcome ?? null,
+    entry.source_session_id ?? null,
+    entry.valid_from ?? entry.created,
+    entry.superseded_by ?? null,
+    entry.extracted_from ?? null,
+    entry.dag_level ?? 0,
+    entry.dag_parent_id ?? null,
+    entry.kind ?? 'distilled',
+    entry.scope ?? null,
+    entry.owner ?? null,
+    entry.artifact_ref ?? null,
+    entry.tenant_id ?? DEFAULT_TENANT_ID,
+    entry.origin_project ?? null,
+    entry.descendant_count ?? 0,
+    entry.earliest_at ?? null,
+    entry.latest_at ?? null,
+    entry.dag_level_3_built_at ?? null,
+  ];
+}
+
+export function syncFtsRow(db: ReturnType<typeof openHippoDb>, entry: MemoryEntry, isNewRow = false): void {
+  if (!isFtsAvailable(db)) return;
+  try {
+    if (!isNewRow) db.prepare(`DELETE FROM memories_fts WHERE id = ?`).run(entry.id);
+    db.prepare(`INSERT INTO memories_fts(id, content, tags) VALUES (?, ?, ?)`).run(
+      entry.id,
+      entry.content,
+      entry.tags.join(' ')
+    );
+  } catch (err) {
+    // The memories table stays authoritative; a stale FTS row only costs recall quality, so the write goes on.
+    log.warnThenSample(
+      'fts-sync',
+      `FTS index update failed for ${entry.id}; keyword recall may miss it: ${errorMessage(err)}`,
+      errorFields(err),
+    );
+  }
+}
+
+export function ftsRowExists(db: ReturnType<typeof openHippoDb>, id: string): boolean {
+  return db.prepare('SELECT id FROM memories_fts WHERE id = ?').get(id) !== undefined;
+}
+
+export function deleteFtsRow(db: ReturnType<typeof openHippoDb>, id: string): void {
+  if (!isFtsAvailable(db)) return;
+  try {
+    db.prepare(`DELETE FROM memories_fts WHERE id = ?`).run(id);
+  } catch (err) {
+    log.warnThenSample(
+      'fts-delete',
+      `FTS index delete failed for ${id}; recall may return a stale hit: ${errorMessage(err)}`,
+      errorFields(err),
+    );
+  }
+}
+
+/** One set delete for `staleIds`, because `id` is UNINDEXED and each delete by id scans the whole index; then one
+ * insert per row. */
+export function replaceFtsRows(
+  db: ReturnType<typeof openHippoDb>,
+  rows: readonly MemoryEntry[],
+  staleIds: readonly string[],
+): void {
+  if (!isFtsAvailable(db)) return;
+  let kept: ReadonlySet<string> = new Set();
+  if (staleIds.length > 0) {
+    try {
+      db.prepare(`DELETE FROM memories_fts WHERE id IN (SELECT value FROM json_each(?))`).run(JSON.stringify(staleIds));
+    } catch (err) {
+      // Their old rows are still indexed, so inserting them again would index an id twice; only new ids go in.
+      kept = new Set(staleIds);
+      log.warnThenSample(
+        'fts-delete',
+        `FTS index delete failed for ${staleIds.length} row(s); recall may return a stale hit: ${errorMessage(err)}`,
+        errorFields(err),
+      );
+    }
+  }
+  const toInsert = rows.filter((row) => !kept.has(row.id));
+  if (toInsert.length === 0) return;
+  const insert = db.prepare(`INSERT INTO memories_fts(id, content, tags) VALUES (?, ?, ?)`);
+  for (const row of toInsert) {
+    try {
+      insert.run(row.id, row.content, row.tags.join(' '));
+    } catch (err) {
+      log.warnThenSample(
+        'fts-sync',
+        `FTS index update failed for ${row.id}; keyword recall may miss it: ${errorMessage(err)}`,
+        errorFields(err),
+      );
+    }
+  }
+}
+
+/** Row counts of a full-text index that has drifted from `memories`, re-synced after the count when `repair`; null when
+ * the two agree or there is no index. */
+export function ftsDrift(hippoRoot: string, repair: boolean): { memories: number; fts: number } | null {
+  const db = openHippoDb(hippoRoot);
+  try {
+    if (!isFtsAvailable(db)) return null;
+    const counts = ftsRowCounts(db);
+    if (counts === null || counts.memories === counts.fts) return null;
+    if (repair) repairFtsDrift(db);
+    return counts;
+  } finally {
+    closeHippoDb(db);
+  }
+}
+
+/** Stamp origin_project from the store's own location (parent of `<project>/.hippo`; the home store is '' =
+ * user-global) when never stamped; returns a copy. NULL is PRESERVED: it means no known project and ambient context
+ * denies it, so a writeback must not launder it. */
+export function stampOriginProject(hippoRoot: string, entry: MemoryEntry): MemoryEntry {
+  if (entry.origin_project !== undefined) return entry;
+  return { ...entry, origin_project: fallbackOrigin(hippoRoot) };
+}
+
+/** Import-time variant for a mirror with no origin field (an explicit null stays null), for rows predating the origin
+ * column. Like the v39 backfill, the provenance source (`shared:<project>:` / `promoted:<localRoot>`) wins over the
+ * destination store's location. */
+export function stampOriginProjectForImport(hippoRoot: string, entry: MemoryEntry): MemoryEntry {
+  if (entry.origin_project !== undefined) return entry;
+  const fromSource = originFromSource(entry.source);
+  return {
+    ...entry,
+    origin_project: fromSource ?? fallbackOrigin(hippoRoot),
+  };
+}

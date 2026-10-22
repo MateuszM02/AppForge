@@ -1,0 +1,29 @@
+{
+  // One build for every TypeScript part (vendored upstream code included). RepoRadar is bundled
+  // separately by scripts/build-reporadar.mjs because it uses Next.js-style "@/..." imports.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": false,
+    "types": ["node"]
+  },
+  "include": [
+    "server/src/**/*.ts",
+    "memory/src/**/*.ts",
+    "memory/upstream/src/**/*.ts",
+    "skill-sources/src/**/*.ts",
+    "skill-browser/src/**/*.ts",
+    "camofox-browser/src/**/*.ts",
+    "RepoRadar/src/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist", "**/upstream/src/postinstall.ts"]
+}

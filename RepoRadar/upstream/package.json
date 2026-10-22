@@ -1,0 +1,55 @@
+{
+  "name": "reporadar",
+  "version": "1.1.5",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "next dev --webpack --port 2000",
+    "build": "prisma generate && next build --webpack && pnpm build:worker",
+    "build:worker": "esbuild scripts/search-worker.mts --bundle --platform=node --format=esm --packages=external --outfile=.next/search-worker.mjs",
+    "start": "next start --port 2000",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/search-quality.test.ts tests/search-scheduler.test.ts",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "cli": "node scripts/cli.mjs"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "@tanstack/react-query": "^5.100.14",
+    "@xenova/transformers": "^2.17.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.17.0",
+    "next": "16.2.6",
+    "octokit": "^5.0.5",
+    "openai": "^6.39.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "recharts": "^3.8.1",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "esbuild": "^0.28.0",
+    "prisma": "^6.19.3",
+    "tailwindcss": "^4",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  },
+  "pnpm": {
+    "neverBuiltDependencies": [
+      "unrs-resolver"
+    ]
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "name": "appforge",
+  "version": "0.1.0",
+  "description": "One local MCP server that helps any AI agent find, create and improve apps: stealth browser, semantic GitHub repo search, Anthropic skills and plugins, and a local memory.",
+  "license": "MIT",
+  "author": "MateuszM02",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MateuszM02/AppForge.git"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "bin": {
+    "appforge": "dist/server/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build-reporadar.mjs",
+    "build:ts": "tsc -p tsconfig.json",
+    "build:reporadar": "node scripts/build-reporadar.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --test-concurrency=1 \"dist/tests/**/*.test.js\"",
+    "smoke": "node scripts/smoke.mjs",
+    "serve": "node dist/server/src/cli.js serve",
+    "camofox:fetch": "node camofox-browser/upstream/postinstall.js"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@skillmds/core": "^1.0.0",
+    "better-sqlite3": "^13.0.3",
+    "camoufox-js": "0.11.5",
+    "express": "^5.2.1",
+    "fuse.js": "^7.0.0",
+    "octokit": "^5.0.5",
+    "playwright-core": "^1.58.0",
+    "prom-client": "^15.1.3",
+    "swagger-jsdoc": "^6.2.8",
+    "yaml": "^2.9.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "5.9.3"
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "better-sqlite3": false,
+    "onnxruntime-node": false,
+    "protobufjs": false,
+    "sharp": false
+  }
+}

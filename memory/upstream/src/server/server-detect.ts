@@ -1,0 +1,247 @@
+import { existsSync, readFileSync, writeFileSync, unlinkSync, renameSync } from 'node:fs';
+import { join } from 'node:path';
+import { envHealthProbeMs } from '../util/env.js';
+import { errorCode, errorFields, errorMessage, log } from '../util/log.js';
+
+export interface ServerInfo {
+  /**
+   * Pidfile schema version; absent on pidfiles written before the field existed, which detectServer treats as legacy
+   * and still accepts.
+   */
+  schema?: number;
+  pid: number;
+  port: number;
+  url: string;
+  started_at: string;
+}
+
+// Pidfile sits directly inside hippoRoot (the `.hippo` directory itself, as for openHippoDb), i.e.
+// `${hippoRoot}/server.pid`.
+const PIDFILE = 'server.pid';
+
+/**
+ * How long detectServer waits for the `/health` probe before treating the pidfile as stale; short because it fires only
+ * when a pidfile exists with a live
+ * pid on loopback. HIPPO_HEALTH_PROBE_MS overrides it. */
+const HEALTH_PROBE_TIMEOUT_MS = 300;
+
+/**
+ * Hard cap on the /health body detectServer buffers: a real payload is well under 1 KB, so a larger body means the
+ * process on the recorded port is not
+ * hippo. */
+const HEALTH_BODY_MAX_BYTES = 64 * 1024;
+
+/**
+ * Loopback hosts a recorded pidfile url may point at (serve() only binds these); any other host is malformed or forged
+ * and is not probed.
+ */
+const PIDFILE_LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+
+/**
+ * The pidfile names a live process on loopback that did not answer /health in time: most likely a busy server, so a
+ * caller must neither
+ * bypass it with a second writer nor start another server beside it. */
+export class ServerUnresponsiveError extends Error {
+  constructor(info: ServerInfo, probeMs: number, options?: ErrorOptions) {
+    super(
+      `a hippo server (pid ${info.pid}) is recorded at ${info.url} but did not answer /health within ${probeMs} ms; ` +
+      `it may be busy. ` +
+      'Retry shortly, raise HIPPO_HEALTH_PROBE_MS, or stop that server.',
+      options,
+    );
+    this.name = 'ServerUnresponsiveError';
+  }
+}
+
+/** False when the pidfile's pid is dead or its url could not be one serve() wrote. */
+function isLiveLoopbackTarget(info: ServerInfo): boolean {
+  // Signal 0 throws if the pid is dead or owned by another user we cannot signal; either way, treat as stale.
+  // process.kill(pid, 0) works cross-platform for the dead-pid case (OpenProcess + GetExitCodeProcess on Windows).
+  try {
+    process.kill(info.pid, 0);
+  } catch {
+    return false;
+  }
+
+  // The pid may have been reused and the recorded url is read from a forgeable file; serve() only binds loopback, so a
+  // url that is not http on a loopback
+  // host and the recorded port is malformed or forged. Reject it before probing, since the probe and any routed request
+  // can carry HIPPO_API_KEY.
+  let probeUrl: URL;
+  try {
+    probeUrl = new URL(info.url);
+  } catch {
+    return false;
+  }
+  return (
+    probeUrl.protocol === 'http:' &&
+    PIDFILE_LOOPBACK_HOSTS.has(probeUrl.hostname.replace(/^\[(.*)\]$/, '$1')) &&
+    probeUrl.port === String(info.port)
+  );
+}
+
+/** The whole body as text, or null once it passes HEALTH_BODY_MAX_BYTES (the stream is then cancelled). */
+async function readCappedBody(body: ReadableStream<Uint8Array>): Promise<string | null> {
+  // Read the body under a hard byte cap: the process on info.url may not be hippo (pid reuse), so its response is
+  // untrusted and never goes unbounded into a
+  // parser.
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let raw = '';
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    if (received > HEALTH_BODY_MAX_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    raw += decoder.decode(value, { stream: true });
+  }
+  raw += decoder.decode();
+  return raw;
+}
+
+/**
+ * True when fetch failed because nothing listens on the port (the error or its cause, or any address tried, is
+ * ECONNREFUSED).
+ */
+function isConnectionRefused<E>(err: E): boolean {
+  if (errorCode(err) === 'ECONNREFUSED') return true;
+  const cause = err instanceof Error ? err.cause : undefined;
+  if (errorCode(cause) === 'ECONNREFUSED') return true;
+  return (
+    cause instanceof AggregateError &&
+    cause.errors.length > 0 &&
+    cause.errors.every((e) => errorCode(e) === 'ECONNREFUSED')
+  );
+}
+
+/**
+ * True when /health on info.url reports the pidfile's started_at; unlinks the pidfile on any definitive mismatch and
+ * throws ServerUnresponsiveError on a
+ * probe timeout. */
+async function healthMatchesPidfile(hippoRoot: string, info: ServerInfo): Promise<boolean> {
+  // Refusal, non-200 or a malformed body unlink the pidfile as stale. A timeout proves neither a dead server nor this
+  // one, so it keeps the pidfile and throws.
+  // Any other error keeps it and warns.
+  const probeMs = envHealthProbeMs() ?? HEALTH_PROBE_TIMEOUT_MS;
+  try {
+    const res = await fetch(`${info.url}/health`, { signal: AbortSignal.timeout(probeMs) });
+    if (!res.ok || !res.body) {
+      removePidfile(hippoRoot);
+      return false;
+    }
+    const raw = await readCappedBody(res.body);
+    if (raw === null) {
+      removePidfile(hippoRoot);
+      return false;
+    }
+    const body: { started_at?: unknown } = JSON.parse(raw);
+    if (body.started_at !== info.started_at) {
+      removePidfile(hippoRoot);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new ServerUnresponsiveError(info, probeMs, { cause: err });
+    }
+    // A refusal or a non-JSON body proves no hippo server answers there; any other failure may be a live server, so the
+    // file stays.
+    if (isConnectionRefused(err) || err instanceof SyntaxError) {
+      removePidfile(hippoRoot);
+    } else {
+      log.warn(
+        `server pidfile ${join(hippoRoot, PIDFILE)} kept: the /health probe failed (${errorMessage(err)})`,
+        errorFields(err),
+      );
+    }
+    return false;
+  }
+}
+
+/**
+ * Returns the pidfile's ServerInfo if a live hippo server answers on the recorded url, else null (best-effort unlinking
+ * of missing/stale/malformed pidfiles).
+ * `process.kill(pid, 0)` rules out dead pids; GET /health must then return the pidfile's `started_at` (pids get
+ * reused). Probes only if the pid is live.
+ * Throws ServerUnresponsiveError when that probe times out. */
+export async function detectServer(hippoRoot: string): Promise<ServerInfo | null> {
+  const path = join(hippoRoot, PIDFILE);
+  if (!existsSync(path)) return null;
+
+  let info: ServerInfo;
+  try {
+    info = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (err) {
+    log.warn(`server pidfile ${path} is unreadable (${errorMessage(err)}); removing it`, errorFields(err));
+    removePidfile(hippoRoot);
+    return null;
+  }
+
+  if (!isLiveLoopbackTarget(info)) {
+    removePidfile(hippoRoot);
+    return null;
+  }
+
+  return (await healthMatchesPidfile(hippoRoot, info)) ? info : null;
+}
+
+/**
+ * Atomically writes the pidfile (process-scoped temp file, then rename; atomic on POSIX and NTFS). `startedAt` comes
+ * from the caller (`serve()`) so the
+ * pidfile and GET /health carry the same timestamp, which detectServer's liveness probe compares. */
+export function writePidfile(
+  hippoRoot: string,
+  opts: { port: number; url: string; startedAt: string },
+): void {
+  const path = join(hippoRoot, PIDFILE);
+  const tmp = `${path}.tmp.${process.pid}`;
+  const info: ServerInfo = {
+    schema: 1,
+    pid: process.pid,
+    port: opts.port,
+    url: opts.url,
+    started_at: opts.startedAt,
+  };
+  writeFileSync(tmp, JSON.stringify(info));
+  renameSync(tmp, path);
+}
+
+/**
+ * Best-effort pidfile removal, silent on any error so shutdown paths can call it. Identity-blind: a shutdown that must
+ * not clobber a newer server's pidfile
+ * uses removePidfileIfOwned. */
+export function removePidfile(hippoRoot: string): void {
+  const path = join(hippoRoot, PIDFILE);
+  try { unlinkSync(path); } catch { /* already gone or undeletable; the next detectServer probe re-checks */ }
+}
+
+/**
+ * Removes the pidfile ONLY when both `pid` and `started_at` match `owner`, so an older shutting-down server cannot
+ * orphan a newer one; never throws.
+ * Anything unreadable or malformed is "not provably mine" and left alone (detectServer unlinks it). Returns true iff
+ * removed.
+ */
+export function removePidfileIfOwned(
+  hippoRoot: string,
+  owner: { pid: number; startedAt: string },
+): boolean {
+  const path = join(hippoRoot, PIDFILE);
+  try {
+    const info: ServerInfo = JSON.parse(readFileSync(path, 'utf8'));
+    // A literal JSON `null` parses cleanly but throws on property access;
+    // that lands in the catch below, which is the intended "not mine" path.
+    if (info.pid !== owner.pid || info.started_at !== owner.startedAt) {
+      return false; // a different server owns the pidfile now
+    }
+    unlinkSync(path);
+    return true;
+  } catch {
+    // Missing, unreadable, malformed, or non-object pidfile, or an unlink
+    // failure: none is a provable own-removal, so report not-removed.
+    return false;
+  }
+}

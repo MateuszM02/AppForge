@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+.env
+.DS_Store
+# runtime data never lives in the repo (see README "Where data lives")
+.appforge/
