@@ -23,7 +23,9 @@ export const ENCODERS: Record<string, EncoderModel> = {
 /** Local LLMs for the final pick, Q4_K_M GGUF, stored in models/llm under their file name. Also tried (labelled listwise
  * request, Radeon RX 6800): granite-4.0-h-tiny and granite-4.0-h-micro kept traps; Ministral-3-3B was right and quick on a
  * short request but in real searches (longer README excerpts) took 55 s per pick against Qwen3.5-4B's 41 s and ranked
- * worse; Qwen3-1.7B read the prompt at half Qwen3.5's speed. */
+ * worse; MiniCPM5-2B (Sept 2026) likewise: 5.7 s on the short request, but 25-33 s per pick in real searches against
+ * Qwen3.5-2B's 13-16 s, at the same nDCG (its template's thought block also eats the answer's first characters); Qwen3-1.7B
+ * read the prompt at half Qwen3.5's speed. */
 export interface LlmModel {
   uri: string;
   file: string;
@@ -54,16 +56,17 @@ export interface Profile {
    * the cross-encoder reads: 150 ranked as well as 300 on the test set, in half the time. */
   poolSize: number;
   rerankPool: number;
-  /** nDCG@10 on 4 prompts of tests/search-gold.json (PDF, habit, react table, screen recorder) and the reference
-   * timings (10 finalists), from scripts/eval-search.mjs; llmCpu scales a CPU-only run of 15 finalists to 10. */
+  /** nDCG@10 on the 10 prompts of tests/search-gold.json, and the reference timings (10 finalists), from
+   * scripts/eval-search.mjs; llmCpu scales a CPU-only run of 15 finalists. For scale on the same inputs: Claude Haiku
+   * 0.51, Claude Sonnet 0.53, a perfect pick 0.55; the cross-encoder's 150 -> 10 cut is where most answers are lost. */
   quality: number | null;
   timings: Timings | null;
 }
 
 export const PROFILES: Record<ProfileName, Profile> = {
-  small: { embed: 'minilm', rerank: 'msmarco-l6', llm: 'qwen3.5-2b', poolSize: 500, rerankPool: 150, quality: 0.68, timings: { github: 19, encoders: 7.5, llmGpu: 20, llmCpu: 61 } },
-  balanced: { embed: 'minilm', rerank: 'mxbai-base', llm: 'qwen3.5-2b', poolSize: 1000, rerankPool: 150, quality: 0.49, timings: { github: 20, encoders: 5.4, llmGpu: 20, llmCpu: 61 } },
-  best: { embed: 'minilm', rerank: 'mxbai-base', llm: 'qwen3.5-4b', poolSize: 2000, rerankPool: 150, quality: 0.7, timings: { github: 22, encoders: 7.9, llmGpu: 25, llmCpu: 260 } },
+  small: { embed: 'minilm', rerank: 'msmarco-l6', llm: 'qwen3.5-2b', poolSize: 500, rerankPool: 150, quality: 0.4, timings: { github: 13, encoders: 7.4, llmGpu: 17, llmCpu: 61 } },
+  balanced: { embed: 'minilm', rerank: 'mxbai-base', llm: 'qwen3.5-2b', poolSize: 1000, rerankPool: 150, quality: 0.42, timings: { github: 19, encoders: 5.2, llmGpu: 14.5, llmCpu: 61 } },
+  best: { embed: 'minilm', rerank: 'mxbai-base', llm: 'qwen3.5-4b', poolSize: 2000, rerankPool: 150, quality: 0.47, timings: { github: 20, encoders: 6.7, llmGpu: 25, llmCpu: 260 } },
 };
 
 export const isProfile = (name: string): name is ProfileName => (PROFILE_NAMES as string[]).includes(name);

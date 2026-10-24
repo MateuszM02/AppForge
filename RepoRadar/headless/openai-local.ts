@@ -105,6 +105,8 @@ async function create(params: { messages: { role: string; content: string }[]; m
   queue = run.catch(() => undefined);
   try {
     const content = await run;
+    // For comparing models offline (scripts/eval-search.mjs): every request and answer, one JSON line each.
+    if (process.env.APPFORGE_LLM_DUMP) fs.appendFileSync(process.env.APPFORGE_LLM_DUMP, JSON.stringify({ user: JSON.parse(user), answer: JSON.parse(content) }) + '\n');
     return { choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content } }] };
   } catch (e) {
     if (options?.signal?.aborted) timedOut = { user, at: Date.now() };
