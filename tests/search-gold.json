@@ -44,6 +44,20 @@
       "traps": []
     },
     {
+      "prompt": "self-hosted password manager",
+      "field": "security", "complexity": "short", "type": "capability",
+      "must_include": ["dani-garcia/vaultwarden", "bitwarden/server", "keepassxreboot/keepassxc"],
+      "nice_to_have": ["passbolt/passbolt_api", "padloc/padloc"],
+      "traps": []
+    },
+    {
+      "prompt": "python library to scrape websites",
+      "field": "data", "complexity": "short", "type": "capability",
+      "must_include": ["scrapy/scrapy", "d4vinci/scrapling", "unclecode/crawl4ai"],
+      "nice_to_have": ["apify/crawlee-python", "psf/requests-html", "scrapinghub/splash"],
+      "traps": []
+    },
+    {
       "prompt": "react data table",
       "field": "frontend", "complexity": "short", "type": "capability",
       "must_include": ["tanstack/table", "ag-grid/ag-grid", "glideapps/glide-data-grid"],

@@ -52,8 +52,11 @@ async function run(item) {
   const results = (s?.results ?? []).map((r) => ({ fullName: r.repo?.fullName ?? '', stars: r.metrics?.stars ?? 0, future: r.scores?.future ?? 0 }));
   const diags = fs.readFileSync(path.join(paths.cache, 'logs', 'search-diagnostics.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   const m = computeMetrics(item, results.slice(0, 15));
-  const pool = poolRecall(item, diags.filter((d) => d.searchQueryId === id).at(-1)?.candidatePool ?? [])?.recall ?? null;
-  rows.push({ prompt: item.prompt, ...m, poolRecall: pool, seconds, stages: s?.stats?.seconds, llm: s?.stats?.llm, top: results.slice(0, 15).map((r) => r.fullName) });
+  const diag = diags.filter((d) => d.searchQueryId === id).at(-1);
+  const pool = poolRecall(item, diag?.candidatePool ?? [])?.recall ?? null;
+  // Shortlist recall: the expected repos that survived the embedding stage into the cross-encoder's input.
+  const shortlist = poolRecall(item, diag?.funnelSurvivors ?? [])?.recall ?? null;
+  rows.push({ prompt: item.prompt, ...m, poolRecall: pool, shortlistRecall: shortlist, seconds, stages: s?.stats?.seconds, llm: s?.stats?.llm, top: results.slice(0, 15).map((r) => r.fullName) });
   say(`  ${item.prompt.slice(0, 44).padEnd(44)} ndcg=${m.ndcg10.toFixed(2)} must=${(m.mustRecall ?? 0).toFixed(2)} pool=${(pool ?? 0).toFixed(2)} trap=${m.trapLeak} ${seconds.toFixed(0)}s ${JSON.stringify(s?.stats?.seconds ?? {})} llm=${s?.stats?.llm}${s?.status === 'failed' ? ` FAILED: ${s.error}` : ''}`);
 }
 const queue = [...items];
@@ -63,12 +66,13 @@ await Promise.all(Array.from({ length: Math.max(1, Number(opts.parallel)) }, asy
 clearInterval(sampler);
 
 const sec = rows.map((r) => r.seconds).sort((a, b) => a - b);
-const agg = { ...aggregate(rows), poolRecall: rows.reduce((t, r) => t + (r.poolRecall ?? 0), 0) / (rows.length || 1), secondsP50: sec[Math.floor(sec.length / 2)], peakRssMB: Math.round(peakRss / 1048576) };
+const mean = (k) => rows.reduce((t, r) => t + (r[k] ?? 0), 0) / (rows.length || 1);
+const agg = { ...aggregate(rows), poolRecall: mean("poolRecall"), shortlistRecall: mean("shortlistRecall"), secondsP50: sec[Math.floor(sec.length / 2)], peakRssMB: Math.round(peakRss / 1048576) };
 const file = path.join(realData, 'cache', 'eval', `${opts.tag}.json`);
 fs.mkdirSync(path.dirname(file), { recursive: true });
 fs.writeFileSync(file, JSON.stringify({ tag: opts.tag, at: new Date().toISOString(), aggregate: agg, rows }, null, 2) + '\n');
 const f = (v, d = 3) => (typeof v === 'number' ? v.toFixed(d) : '-');
-say(`\n${opts.tag}: nDCG@10=${f(agg.ndcg10)} mustRecall=${f(agg.mustRecall)} recall@15=${f(agg.recall15)} poolRecall=${f(agg.poolRecall)} trapLeak=${f(agg.trapLeak, 2)} p50=${f(agg.secondsP50, 0)}s peakRSS=${agg.peakRssMB}MB`);
+say(`\n${opts.tag}: nDCG@10=${f(agg.ndcg10)} mustRecall=${f(agg.mustRecall)} recall@15=${f(agg.recall15)} poolRecall=${f(agg.poolRecall)} shortlistRecall=${f(agg.shortlistRecall)} trapLeak=${f(agg.trapLeak, 2)} p50=${f(agg.secondsP50, 0)}s peakRSS=${agg.peakRssMB}MB`);
 say(`report: ${file}`);
 // Remove the models link itself first (rmdir removes a junction, never its target), then the throwaway folder.
 try {
