@@ -24,6 +24,7 @@
     "camofox-browser/src/**/*.ts",
     "RepoRadar/src/**/*.ts",
     "RepoRadar/headless/prisma-shim.ts",
+    "RepoRadar/headless/fetch.ts",
     "tests/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "**/upstream/src/postinstall.ts"]
