@@ -41,3 +41,8 @@ test('the Prisma shim covers the calls the RepoRadar pipeline makes', async () =
   await db.repoSnapshot!.create!({ data: { repoId: repo.id, stars: 1 } });
   assert.equal(await db.repoSnapshot!.count!({}), 0, 'history tables are not kept');
 });
+
+test('the RepoRadar bundle never writes to stdout, which belongs to the MCP transport', () => {
+  const bundle = fs.readFileSync(path.join(import.meta.dirname, '..', 'reporadar', 'headless.mjs'), 'utf8');
+  assert.ok(!bundle.includes('process.stdout.write('), 'upstream logger lines must go to stderr');
+});

@@ -4,6 +4,7 @@
 //   @prisma/client, @/lib/db -> RepoRadar/headless/prisma-shim.ts (SQLite instead of PostgreSQL)
 //   @xenova/transformers   -> @huggingface/transformers (same API; prebuilt binaries, no install scripts)
 //   openai, next/cache     -> stubs (AppForge never calls an LLM; no Next.js)
+//   process.stdout.write   -> process.stderr.write (stdout belongs to the MCP transport)
 // npm packages stay external and load from node_modules.
 
 import fs from 'node:fs';
@@ -32,10 +33,17 @@ const resolvePlugin = {
       return r.errors.length ? { errors: r.errors } : { path: r.path };
     });
     // Upstream writes logs/ under the current directory, which for an MCP server is often the user's project.
-    // At bundle time (files on disk unchanged) that directory becomes AppForge's cache folder instead.
+    // At bundle time (files on disk unchanged) that directory becomes AppForge's cache folder instead. Its logger
+    // also prints info lines with process.stdout.write, which bypasses the console redirect and would put
+    // non-protocol lines on the MCP stdio channel, so those go to stderr.
     b.onLoad({ filter: /RepoRadar[\\/]upstream[\\/]src[\\/].*\.ts$/ }, async (args) => {
       const code = await fs.promises.readFile(args.path, 'utf8');
-      return { contents: code.replaceAll('process.cwd()', '(process.env.APPFORGE_RADAR_DB_DIR || process.cwd())'), loader: 'ts' };
+      return {
+        contents: code
+          .replaceAll('process.cwd()', '(process.env.APPFORGE_RADAR_DB_DIR || process.cwd())')
+          .replaceAll('process.stdout.write(', 'process.stderr.write('),
+        loader: 'ts',
+      };
     });
   },
 };
