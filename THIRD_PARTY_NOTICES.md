@@ -181,12 +181,12 @@ part of this repository, and each keeps its own licence:
 
 | Model | Used for | Licence |
 |---|---|---|
-| [Xenova/all-MiniLM-L6-v2](https://huggingface.co/Xenova/all-MiniLM-L6-v2) | embedding (all profiles) | Apache-2.0 |
-| [Xenova/ms-marco-MiniLM-L-6-v2](https://huggingface.co/Xenova/ms-marco-MiniLM-L-6-v2) | cross-encoder (small) | Apache-2.0 |
-| [mixedbread-ai/mxbai-rerank-xsmall-v1](https://huggingface.co/mixedbread-ai/mxbai-rerank-xsmall-v1) | cross-encoder (balanced) | Apache-2.0 |
-| [mixedbread-ai/mxbai-rerank-base-v1](https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v1) | cross-encoder (best) | Apache-2.0 |
-| [unsloth/Qwen3.5-2B-GGUF](https://huggingface.co/unsloth/Qwen3.5-2B-GGUF) | local LLM (small, balanced) | Apache-2.0 |
-| [unsloth/Qwen3.5-4B-GGUF](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) | local LLM (best) | Apache-2.0 |
+| [Xenova/all-MiniLM-L6-v2](https://huggingface.co/Xenova/all-MiniLM-L6-v2) | embedding (small) | Apache-2.0 |
+| [onnx-community/granite-embedding-small-english-r2-ONNX](https://huggingface.co/onnx-community/granite-embedding-small-english-r2-ONNX) | embedding (balanced, best) | Apache-2.0 |
+| [giladgd/Qwen3-Reranker-0.6B-GGUF](https://huggingface.co/giladgd/Qwen3-Reranker-0.6B-GGUF) | cross-encoder (small, balanced) | Apache-2.0 |
+| [giladgd/Qwen3-Reranker-4B-GGUF](https://huggingface.co/giladgd/Qwen3-Reranker-4B-GGUF) | cross-encoder (best) | Apache-2.0 |
+| [unsloth/Qwen3.5-2B-GGUF](https://huggingface.co/unsloth/Qwen3.5-2B-GGUF) | local LLM (small) | Apache-2.0 |
+| [unsloth/Qwen3.5-4B-GGUF](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) | local LLM (balanced, best) | Apache-2.0 |
 
 ## Skills and plugins indexed at run time
 

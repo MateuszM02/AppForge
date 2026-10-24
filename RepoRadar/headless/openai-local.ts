@@ -38,17 +38,24 @@ async function unload(): Promise<void> {
 }
 
 /** Loads the model, on the GPU when node-llama-cpp finds a usable one (Vulkan, CUDA, Metal), else on the CPU. */
+/** node-llama-cpp's engine, shared with the GGUF rerankers (encoders.ts): the GPU when it finds a usable one, else the CPU. */
+export function llamaRuntime(): Promise<any> {
+  // Prebuilt binaries only (the package's install script is off); stdout belongs to the MCP transport.
+  llama ??= import('node-llama-cpp').then((lib) =>
+    lib.getLlama({
+      gpu: process.env.APPFORGE_LLM_GPU === 'off' ? false : 'auto',
+      build: 'never',
+      progressLogs: false,
+      logLevel: lib.LlamaLogLevel.warn,
+      logger: (level, message) => process.stderr.write(`[local-llm] ${level}: ${message}\n`),
+    }),
+  );
+  return llama;
+}
+
 async function load(modelPath: string) {
   const lib = await import('node-llama-cpp');
-  // Prebuilt binaries only (the package's install script is off); stdout belongs to the MCP transport.
-  llama ??= lib.getLlama({
-    gpu: process.env.APPFORGE_LLM_GPU === 'off' ? false : 'auto',
-    build: 'never',
-    progressLogs: false,
-    logLevel: lib.LlamaLogLevel.warn,
-    logger: (level, message) => process.stderr.write(`[local-llm] ${level}: ${message}\n`),
-  });
-  const engine = await llama;
+  const engine = await llamaRuntime();
   if (loaded?.path !== modelPath) {
     await unload();
     if (!fs.existsSync(modelPath)) throw new Error(`Local LLM model not found: ${modelPath} (run \`appforge setup models\`).`);

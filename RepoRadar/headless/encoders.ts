@@ -3,6 +3,7 @@
 // (server/src/models.ts); both download once into the models folder.
 
 import { AutoModelForSequenceClassification, AutoTokenizer, env, pipeline } from '@huggingface/transformers';
+import { llamaRuntime } from './openai-local.js';
 
 export interface EncoderSpec {
   /** Hugging Face model id with ONNX weights, e.g. "Xenova/bge-small-en-v1.5". */
@@ -13,6 +14,8 @@ export interface EncoderSpec {
   pooling?: 'mean' | 'cls';
   /** Cross-encoders: whether to read the start of each README too. */
   readme?: boolean;
+  /** Cross-encoders run by node-llama-cpp instead (Qwen3-Reranker): the GGUF file, on the GPU when there is one. */
+  gguf?: string;
 }
 
 type Extractor = (texts: string[], o: { pooling: 'mean' | 'cls'; normalize: boolean }) => Promise<{ data: Float32Array; dims: number[] }>;
@@ -87,8 +90,22 @@ function crossEncoder(spec: EncoderSpec) {
 }
 
 /** Relevance of each doc to the query in (0,1): the sigmoid of the cross-encoder's logit. */
+const rankers = new Map<string, Promise<any>>();
+
+/** A GGUF reranker's ranking context, loaded once per file. */
+function ggufRanker(file: string): Promise<any> {
+  let p = rankers.get(file);
+  if (!p) {
+    p = llamaRuntime().then(async (engine) => (await engine.loadModel({ modelPath: file })).createRankingContext({ contextSize: 2048 }));
+    p.catch(() => rankers.delete(file));
+    rankers.set(file, p);
+  }
+  return p;
+}
+
 export async function rerank(spec: EncoderSpec, query: string, docs: string[], batchSize = 8): Promise<number[]> {
   if (docs.length === 0) return [];
+  if (spec.gguf) return (await ggufRanker(spec.gguf)).rankAll(query, docs);
   const { tok, model } = await crossEncoder(spec);
   const out: number[] = [];
   for (let i = 0; i < docs.length; i += batchSize) {

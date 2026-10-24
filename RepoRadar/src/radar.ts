@@ -52,8 +52,8 @@ export interface RadarSearch {
 export interface SearchSettings {
   poolSize: number;
   embed: { id: string; pooling?: 'mean' | 'cls' };
-  /** readme: whether this cross-encoder reads the start of each README. */
-  rerank: { id: string; readme?: boolean };
+  /** readme: whether this cross-encoder reads the start of each README; gguf: its file, for node-llama-cpp. */
+  rerank: { id: string; readme?: boolean; gguf?: string };
   minSimilarity: number;
   rerankPool: number;
   minRerankScore: number;
@@ -103,7 +103,10 @@ export function llmPath(m: LlmModel): string | null {
   return fs.existsSync(file) ? file : null;
 }
 
-const spec = (m: EncoderModel) => ({ id: m.id, pooling: m.pooling, readme: m.readme });
+/** Where a GGUF reranker lives (models/rerank/<file>). */
+export const rerankPath = (m: EncoderModel) => (m.gguf ? path.join(paths.models, 'rerank', m.gguf.file) : undefined);
+
+const spec = (m: EncoderModel) => ({ id: m.id, pooling: m.pooling, readme: m.readme, gguf: rerankPath(m) });
 
 export function searchSettings(): SearchSettings {
   const c = loadConfig().repos;
@@ -156,10 +159,14 @@ export async function prefetchModels(profile?: string): Promise<string[]> {
   const c = loadConfig().repos;
   const m = resolveModels({ ...c, modelProfile: profile ?? c.modelProfile });
   await enc.warm(spec(m.embed), 'embed');
+  if (m.rerank.gguf && !fs.existsSync(rerankPath(m.rerank)!)) {
+    const { resolveModelFile } = await import('node-llama-cpp');
+    await resolveModelFile(m.rerank.gguf.uri, { directory: path.join(paths.models, 'rerank'), fileName: m.rerank.gguf.file, cli: process.stderr.isTTY === true });
+  }
   await enc.warm(spec(m.rerank), 'rerank');
   if (!llmPath(m.llm)) {
     const { resolveModelFile } = await import('node-llama-cpp');
     await resolveModelFile(m.llm.uri, { directory: path.join(paths.models, 'llm'), fileName: m.llm.file, cli: process.stderr.isTTY === true });
   }
-  return [m.embed.id, m.rerank.id, m.llm.file];
+  return [m.embed.id, m.rerank.gguf?.file ?? m.rerank.id, m.llm.file];
 }

@@ -12,12 +12,23 @@ export interface EncoderModel {
   pooling?: 'mean' | 'cls';
   /** Cross-encoders: whether the start of the README helps (it does for ms-marco, it hurts mxbai). */
   readme?: boolean;
+  /** Rerankers run by node-llama-cpp (GPU when available): download URI and file name in models/rerank. */
+  gguf?: { uri: string; file: string };
 }
 
 export const ENCODERS: Record<string, EncoderModel> = {
+  // Embedding: share of the fetched expected repos that reach the 150-repo shortlist, on fixed pools of the 10 test
+  // prompts: MiniLM 0.93 (worst prompt 0.67, stdev 0.12), granite-small 0.97 (worst 0.83, stdev 0.05) at about 4 s
+  // more per search. bge-small/base, arctic-embed-s and gte-modernbert were no better; the 0.5-0.7B embedders
+  // (Qwen3-Embedding, Harrier, EmbeddingGemma 2, Nomic v2) were not kept: they embed all 2,000 candidates per search.
   minilm: { id: 'Xenova/all-MiniLM-L6-v2', kind: 'embed', mb: 23, pooling: 'mean' },
+  'granite-small': { id: 'onnx-community/granite-embedding-small-english-r2-ONNX', kind: 'embed', mb: 97, pooling: 'cls' },
+  // Rerankers: on the same pools and shortlist, no LLM, the best ordering of each one's top 10 scored nDCG 0.49
+  // (ms-marco-L6), 0.55 (mxbai-rerank-base-v1), 0.61 (Qwen3 0.6B, +1 s per search) and 0.67 (Qwen3 4B, +15 s).
+  // ms-marco (the reranker of AppForge 0.1) stays listed so `appforge setup models` can remove its files.
   'msmarco-l6': { id: 'Xenova/ms-marco-MiniLM-L-6-v2', kind: 'rerank', mb: 23, readme: true },
-  'mxbai-base': { id: 'mixedbread-ai/mxbai-rerank-base-v1', kind: 'rerank', mb: 245, readme: false },
+  'qwen3-rerank-0.6b': { id: 'Qwen3-Reranker-0.6B', kind: 'rerank', mb: 639, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf', file: 'Qwen3-Reranker-0.6B.Q8_0.gguf' } },
+  'qwen3-rerank-4b': { id: 'Qwen3-Reranker-4B', kind: 'rerank', mb: 2497, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-4B-GGUF/Qwen3-Reranker-4B.Q4_K_M.gguf', file: 'Qwen3-Reranker-4B.Q4_K_M.gguf' } },
 };
 
 /** Local LLMs for the final pick, Q4_K_M GGUF, stored in models/llm under their file name. Also tried (labelled listwise
@@ -56,17 +67,16 @@ export interface Profile {
    * the cross-encoder reads: 150 ranked as well as 300 on the test set, in half the time. */
   poolSize: number;
   rerankPool: number;
-  /** nDCG@10 on the 10 prompts of tests/search-gold.json, and the reference timings (10 finalists), from
-   * scripts/eval-search.mjs; llmCpu scales a CPU-only run of 15 finalists. For scale on the same inputs: Claude Haiku
-   * 0.51, Claude Sonnet 0.53, a perfect pick 0.55; the cross-encoder's 150 -> 10 cut is where most answers are lost. */
+  /** nDCG@10 on the 10 prompts of tests/search-gold.json (null: not yet measured with these models), and the seconds per
+   * search, built from measured parts: GitHub, encoders (embedding + reranker), LLM pick with 10 finalists. */
   quality: number | null;
   timings: Timings | null;
 }
 
 export const PROFILES: Record<ProfileName, Profile> = {
-  small: { embed: 'minilm', rerank: 'msmarco-l6', llm: 'qwen3.5-2b', poolSize: 500, rerankPool: 150, quality: 0.4, timings: { github: 13, encoders: 7.4, llmGpu: 17, llmCpu: 61 } },
-  balanced: { embed: 'minilm', rerank: 'mxbai-base', llm: 'qwen3.5-2b', poolSize: 1000, rerankPool: 150, quality: 0.42, timings: { github: 19, encoders: 5.2, llmGpu: 14.5, llmCpu: 61 } },
-  best: { embed: 'minilm', rerank: 'mxbai-base', llm: 'qwen3.5-4b', poolSize: 2000, rerankPool: 150, quality: 0.47, timings: { github: 20, encoders: 6.7, llmGpu: 25, llmCpu: 260 } },
+  small: { embed: 'minilm', rerank: 'qwen3-rerank-0.6b', llm: 'qwen3.5-2b', poolSize: 500, rerankPool: 150, quality: null, timings: { github: 13, encoders: 10.5, llmGpu: 17, llmCpu: 61 } },
+  balanced: { embed: 'granite-small', rerank: 'qwen3-rerank-0.6b', llm: 'qwen3.5-4b', poolSize: 1000, rerankPool: 150, quality: null, timings: { github: 19, encoders: 14.5, llmGpu: 25, llmCpu: 260 } },
+  best: { embed: 'granite-small', rerank: 'qwen3-rerank-4b', llm: 'qwen3.5-4b', poolSize: 2000, rerankPool: 150, quality: null, timings: { github: 20, encoders: 29, llmGpu: 25, llmCpu: 260 } },
 };
 
 export const isProfile = (name: string): name is ProfileName => (PROFILE_NAMES as string[]).includes(name);

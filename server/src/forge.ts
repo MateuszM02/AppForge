@@ -56,7 +56,7 @@ export async function status() {
   const rm = resolveModels(cfg.repos);
   const present = {
     embedding: exists(path.join(models, ...rm.embed.id.split('/'))),
-    crossEncoder: exists(path.join(models, ...rm.rerank.id.split('/'))),
+    crossEncoder: rm.rerank.gguf ? exists(path.join(models, 'rerank', rm.rerank.gguf.file)) : exists(path.join(models, ...rm.rerank.id.split('/'))),
     llm: exists(path.join(models, 'llm', rm.llm.file)) || exists(rm.llm.uri),
   };
   return {

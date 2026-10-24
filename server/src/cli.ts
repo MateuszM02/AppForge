@@ -15,7 +15,7 @@ Usage: appforge <command>
   unregister [clients]        remove it again
   setup [browser|models|all] [small|balanced|best]
                               download the Camoufox browser (~300 MB) and the repo-search models
-                              (a profile: about 1.3 / 1.5 / 3.0 GB; asks which when run in a terminal)
+                              (a profile: about 1.9 / 3.5 / 5.3 GB; asks which when run in a terminal)
   memory stats|list|consolidate|reset [--empty]|path
   skills sync [--force] | skills list
   config list | config get <key> | config set <key> <value> | config path
@@ -166,7 +166,7 @@ async function chooseProfile(arg?: string): Promise<import('./models.js').Profil
     const est = m.estimateSeconds(name, { probeMs: probe, gpu: gpu !== false });
     const time = est ? `${est.low}-${est.high} s` : 'not measured';
     const quality = p.quality != null ? p.quality.toFixed(2) : '-';
-    const models = [m.ENCODERS[p.embed]!.id, m.ENCODERS[p.rerank]!.id, m.LLMS[p.llm]!.file].map((x) => x.split('/').pop()!.replace(/-Q4_K_M\.gguf$/, '')).join(', ');
+    const models = [m.ENCODERS[p.embed]!.id, m.ENCODERS[p.rerank]!.gguf?.file ?? m.ENCODERS[p.rerank]!.id, m.LLMS[p.llm]!.file].map((x) => x.split('/').pop()!.replace(/-Q4_K_M\.gguf$/, '')).join(', ');
     console.log(`  ${name.padEnd(9)}  ${`${(m.downloadMB(name) / 1000).toFixed(1)} GB`.padStart(8)}   ${time.padStart(16)}   ${quality.padStart(9)}   ${models}`);
   }
   console.log(`\n  * estimated for this computer from measurements on a ${m.REFERENCE.machine}`);
@@ -187,7 +187,7 @@ async function offerCleanup(profile: import('./models.js').ProfileName): Promise
   const keep = m.PROFILES[profile];
   const unused: string[] = [];
   for (const [key, e] of Object.entries(m.ENCODERS)) {
-    const dir = path.join(paths.models, ...e.id.split('/'));
+    const dir = e.gguf ? path.join(paths.models, 'rerank', e.gguf.file) : path.join(paths.models, ...e.id.split('/'));
     if (key !== keep.embed && key !== keep.rerank && fs.existsSync(dir)) unused.push(dir);
   }
   for (const [key, l] of Object.entries(m.LLMS)) {

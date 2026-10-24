@@ -26,13 +26,23 @@ LLM, upstream log lines → stderr.
 
 | Profile | Download | Embedding | Cross-encoder | LLM | Pool / K |
 |---|---|---|---|---|---|
-| small | 1.3 GB | all-MiniLM-L6-v2 | ms-marco-MiniLM-L-6 (+ README) | Qwen3.5-2B | 500 / 150 |
-| balanced | 1.5 GB | all-MiniLM-L6-v2 | mxbai-rerank-base-v1 | Qwen3.5-2B | 1,000 / 150 |
-| best | 3.0 GB | all-MiniLM-L6-v2 | mxbai-rerank-base-v1 | Qwen3.5-4B | 2,000 / 150 |
+| small | 1.9 GB | all-MiniLM-L6-v2 | Qwen3-Reranker-0.6B | Qwen3.5-2B | 500 / 150 |
+| balanced | 3.5 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-0.6B | Qwen3.5-4B | 1,000 / 150 |
+| best | 5.3 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-4B | Qwen3.5-4B | 2,000 / 150 |
 
-Measured with `node scripts/eval-search.mjs` (tests/search-gold.json) before choosing them: on pools of thousands
-the bigger embedders (bge-base, gte-modernbert) and rerankers (mxbai-large, bge-reranker-v2-m3) were not better, the
-cross-encoder needed a strong popularity weight, and 500 candidates already held 96% of the must-have answers.
+Chosen with `node scripts/eval-search.mjs` (tests/search-gold.json) and fixed candidate pools of its 10 prompts:
+
+- Embedding: IBM's 47M granite-embedding-small-english-r2 keeps 97% of the fetched answers in the 150-repo shortlist
+  against MiniLM's 93%, and far more evenly (worst prompt 0.83 vs 0.67) for about 4 s more per search. bge-small/base,
+  arctic-embed-s and gte-modernbert were no better; the 0.5-0.7B embedders (Qwen3-Embedding, Harrier, EmbeddingGemma 2,
+  Nomic v2) were not kept, as they embed all 2,000 candidates per search at several times the cost.
+- Reranker: Qwen3-Reranker raises the best reachable nDCG@10 of its top 10 from 0.55 (mxbai-rerank-base-v1) to 0.61
+  (0.6B, +1 s per search) and 0.67 (4B, +15 s); it needs a strong popularity weight in the blend.
+- Pool: 500 candidates already hold 96% of the must-have answers; more mostly adds alternatives.
+- LLM: Qwen3.5 2B/4B; on the same 10 finalists Claude Haiku and Sonnet ranked only 0.04-0.06 better.
+
+The LLM and the Qwen3 rerankers run on the GPU when there is one (Vulkan, CUDA or Metal), the embedders on DirectML or
+CUDA when available, else everything runs on the CPU.
 
 ## Tools
 
