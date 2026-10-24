@@ -1,0 +1,61 @@
+{
+  "_comment": "Gold set for repo_search quality (scripts/eval-search.mjs), in RepoRadar's format (RepoRadar/upstream/scripts/eval/gold.json). fullNames are lowercased owner/repo. must_include = answers a good search finds; nice_to_have = also good; traps = look related but do not answer the need. Checked against GitHub on 2026-10-24.",
+  "prompts": [
+    {
+      "prompt": "Find me an app that converts PDF to txt/word",
+      "field": "documents", "complexity": "medium", "type": "capability",
+      "must_include": ["stirling-tools/stirling-pdf", "microsoft/markitdown", "artifexsoftware/pdf2docx", "pymupdf/pymupdf", "jsvine/pdfplumber"],
+      "nice_to_have": ["pdfminer/pdfminer.six", "docling-project/docling", "datalab-to/marker", "opendatalab/mineru", "apache/tika", "py-pdf/pypdf", "unstructured-io/unstructured"],
+      "traps": ["swati4star/images-to-pdf", "as-a-service/pdf", "pixelcog/gmail-to-pdf"]
+    },
+    {
+      "prompt": "markdown note taking app with sync",
+      "field": "productivity", "complexity": "short", "type": "capability",
+      "must_include": ["logseq/logseq", "laurent22/joplin", "siyuan-note/siyuan"],
+      "nice_to_have": ["streetwriters/notesnook", "standardnotes/app", "foambubble/foam", "triliumnext/trilium", "anyproto/anytype-ts", "usememos/memos"],
+      "traps": []
+    },
+    {
+      "prompt": "self-hosted alternative to Notion",
+      "field": "productivity", "complexity": "short", "type": "alternative",
+      "must_include": ["appflowy-io/appflowy", "toeverything/affine", "anyproto/anytype-ts"],
+      "nice_to_have": ["outline/outline", "docmost/docmost", "siyuan-note/siyuan", "logseq/logseq"],
+      "traps": ["makenotion/notion-sdk-js"]
+    },
+    {
+      "prompt": "habit tracker",
+      "field": "personal", "complexity": "short", "type": "capability",
+      "must_include": ["isoron/uhabits", "habitrpg/habitica"],
+      "nice_to_have": ["daya0576/beaverhabits"],
+      "traps": []
+    },
+    {
+      "prompt": "convert a video to an animated GIF",
+      "field": "media", "complexity": "short", "type": "capability",
+      "must_include": ["imageoptim/gifski", "nickemanarin/screentogif"],
+      "nice_to_have": ["sindresorhus/gifski", "ffmpeg/ffmpeg"],
+      "traps": []
+    },
+    {
+      "prompt": "screen recorder for Windows",
+      "field": "media", "complexity": "short", "type": "capability",
+      "must_include": ["obsproject/obs-studio", "sharex/sharex", "nickemanarin/screentogif"],
+      "nice_to_have": ["mathewsachin/captura"],
+      "traps": []
+    },
+    {
+      "prompt": "react data table",
+      "field": "frontend", "complexity": "short", "type": "capability",
+      "must_include": ["tanstack/table", "ag-grid/ag-grid", "glideapps/glide-data-grid"],
+      "nice_to_have": ["mui/mui-x", "tabulator-tables/tabulator", "kevinvandy/material-react-table", "comcast/react-data-grid"],
+      "traps": ["pmndrs/zustand", "reduxjs/redux", "pmndrs/jotai", "pmndrs/valtio"]
+    },
+    {
+      "prompt": "rust web framework",
+      "field": "systems", "complexity": "short", "type": "capability",
+      "must_include": ["tokio-rs/axum", "actix/actix-web", "seanmonstar/warp"],
+      "nice_to_have": ["salvo-rs/salvo", "poem-web/poem", "http-rs/tide", "rwf2/rocket"],
+      "traps": ["rust-unofficial/awesome-rust", "flosse/rust-web-framework-comparison"]
+    }
+  ]
+}

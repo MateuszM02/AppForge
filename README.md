@@ -236,6 +236,7 @@ npm run build       # TypeScript + the RepoRadar bundle
 npm test            # unit tests (a few seconds)
 npm run smoke       # starts the server over stdio and calls tools of every group against real services
 node scripts/smoke.mjs memory skills    # only some groups
+node scripts/eval-search.mjs --tag try  # repo_search quality on tests/search-gold.json (real GitHub, ~5 min)
 ```
 
 Layout: [server/](server/) (hub), [memory/](memory/), [skill-sources/](skill-sources/),

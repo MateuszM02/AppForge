@@ -34,6 +34,7 @@ this repository; the user-facing docs are in README.md.
 npm ci && npm run build      # Node 22.16+; the installer's private Node is in %LOCALAPPDATA%\AppForge\node
 npm test                     # unit tests, seconds
 node scripts/smoke.mjs <groups>   # memory skills repos browser forge; real services; temp data folder
+node scripts/eval-search.mjs      # repo_search quality (nDCG, recall, traps, seconds) on tests/search-gold.json
 ```
 
 `repo_search` needs a GitHub login (`gh auth login` or `GITHUB_TOKEN`); the browser step needs
