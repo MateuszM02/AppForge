@@ -68,6 +68,26 @@ export const DEFAULTS = {
   repos: {
     /** repo_search waits this long for results, then returns a job id to poll with repo_search_result. */
     waitSeconds: 40,
+    /** Which local models rank results: small, balanced or best (see `appforge setup models`). */
+    modelProfile: 'best',
+    /** Override the profile's models: a key from server/src/models.ts, a Hugging Face id, or (LLM) a GGUF path. */
+    embedModel: '',
+    rerankModel: '',
+    llmModel: '',
+    /** Repos fetched from GitHub, and how many of them the cross-encoder reads; 0 = the profile's value. */
+    poolSize: 0,
+    rerankPool: 0,
+    /** Stage floors: embedding similarity and cross-encoder score below which a repo is dropped. */
+    minSimilarity: 0.2,
+    minRerankScore: 0,
+    /** How many repos reach the final pick. */
+    finalists: 10,
+    /** Let the local LLM make the final pick (off = cross-encoder order). */
+    llm: true,
+    /** Give up on the LLM pick after this long and keep the cross-encoder order (CPU-only machines are slow). */
+    llmTimeoutSeconds: 240,
+    /** Unload the LLM after this many idle minutes to free its memory. */
+    llmIdleMinutes: 10,
   },
   /** Check GitHub for a newer AppForge when the server starts. */
   updateCheck: true,

@@ -4,7 +4,8 @@ One local MCP server that gives any AI coding agent (GitHub Copilot in VS Code, 
 Gemini CLI, ...) the tools to **find, create and improve apps**:
 
 - **Memory** kept on your computer: your preferences, lessons, decisions and pitfalls, with a size limit you set.
-- **Repo search**: find open-source projects by what they do, ranked by fit, health and risk ([RepoRadar](RepoRadar/)).
+- **Repo search**: find open-source projects by what they do, ranked by local AI models by fit, health and risk
+  ([RepoRadar](RepoRadar/)).
 - **Skills and plugins**: search and install Anthropic's official agent skills and Claude plugins ([skill-browser](skill-browser/)).
 - **Stealth browser**: read docs and sites that block bots ([camofox-browser](camofox-browser/)).
 
@@ -39,8 +40,10 @@ The one command above does everything, without administrator rights:
 2. Installs a private **Node.js 24 LTS** next to it, checked against nodejs.org's SHA-256 list. Your own Node.js
    (if any) is not touched.
 3. Installs the dependencies and builds AppForge.
-4. Downloads the **Camoufox** browser (~300 MB) and two small ranking models (~180 MB).
-   `APPFORGE_MINIMAL=1` skips this; they are then fetched by `appforge setup` or on first use.
+4. Downloads the **Camoufox** browser (~300 MB) and the repo-search models. It asks for a profile and shows each
+   one's size and estimated search time on your computer: **small** 1.3 GB, **balanced** 1.5 GB or **best** 3.0 GB
+   (Enter = best; a GPU makes the local LLM much faster). `APPFORGE_MODELS=small|balanced|best` answers without
+   asking, `APPFORGE_MINIMAL=1` skips the downloads (`appforge setup` later), and `appforge setup models` switches.
 5. Adds the `appforge` command and registers the MCP server in **VS Code** (and VS Code Insiders) and
    **Claude Code**, when they are installed.
 6. Offers to install the **GitHub CLI** and log in (Enter = yes). Repo search needs a GitHub login; everything
@@ -137,12 +140,12 @@ VS Code / Claude Code / any MCP client
     ├── memory/          hippo-memory engine (SQLite + Markdown) + size limit, archive, starter pack
     ├── skill-sources/   catalog of anthropics/skills + anthropics/claude-plugins-official (GitHub, no clone)
     ├── skill-browser/   search / inspect / install skills and plugins for each client
-    ├── RepoRadar/       semantic repo search pipeline, bundled headless with SQLite instead of PostgreSQL
+    ├── RepoRadar/       repo search: GitHub fetch → embedding → cross-encoder → local LLM, on RepoRadar's modules
     └── camofox-browser/ Camoufox REST server, started on demand on 127.0.0.1, stopped when idle
 ```
 
-- **No LLM calls of its own.** The agent you already use does the thinking; AppForge supplies data and actions.
-  That keeps it free and works with any model.
+- **No cloud LLM.** The agent you already use does the thinking; AppForge supplies data and actions. Repo search
+  ranks with small local models (an embedding model, a cross-encoder and a 2-4B LLM) on your computer.
 - **GitHub without burning quota**: commit checks use `git ls-remote`, file contents come from
   raw.githubusercontent.com, API answers are cached with ETags (a "not modified" answer is free), and file lists
   fall back to the repository tarball when the API limit is reached.
@@ -160,7 +163,7 @@ Windows `%LOCALAPPDATA%\AppForge`, macOS `~/Library/Application Support/AppForge
 | `config.json` | your settings (only what differs from the defaults) |
 | `memory/` | the memory: `INDEX.md`, `FORMAT.md`, `global/`, `projects/<key>/`, `archive/` |
 | `cache/` | GitHub cache, skill catalog, RepoRadar cache and logs |
-| `models/` | the two local ranking models |
+| `models/` | the repo-search models of your profile (`models/llm/` holds the LLM) |
 | `browser/` | browser profiles, cookies, downloads |
 | `node/`, `app/` | the private Node.js and the code (when installed with the one-line command) |
 
@@ -186,6 +189,9 @@ setting can also be an environment variable `APPFORGE_<SECTION>_<KEY>` (e.g. `AP
 | `browser.idleMinutes` | 10 | stop the browser after this much idle time |
 | `browser.maxSnapshotChars` | 15000 | longest page snapshot returned at once; the rest comes with `browser_snapshot` offset |
 | `repos.waitSeconds` | 40 | how long `repo_search` waits before returning a job id |
+| `repos.modelProfile` | best | `small`, `balanced` or `best` (set by `appforge setup models`) |
+| `repos.llm` | true | let the local LLM make the final pick (false = cross-encoder order, faster) |
+| `repos.llmTimeoutSeconds` | 240 | give up on the LLM pick after this long |
 | `updateCheck` | true | look for a newer AppForge at start |
 
 Other environment variables: `GITHUB_TOKEN` / `GH_TOKEN` (GitHub access), `APPFORGE_HOME` (data folder),

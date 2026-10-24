@@ -11,13 +11,15 @@
 #   2. Puts a private Node.js 24 LTS in %LOCALAPPDATA%\AppForge\node (checked against nodejs.org's SHA-256 list);
 #      your own Node, if any, is not touched.
 #   3. Installs the dependencies and builds AppForge (only when the version changed).
-#   4. Downloads the Camoufox browser (~300 MB) and two ranking models (~180 MB).
+#   4. Downloads the Camoufox browser (~300 MB) and the repo-search models: asks for a profile, small / balanced /
+#      best (about 1.3 / 1.5 / 3.0 GB), showing the estimated search time on this computer; Enter = best.
 #   5. Adds the `appforge` command (%USERPROFILE%\.local\bin) and registers AppForge in VS Code and Claude Code.
 #   6. Offers to install the GitHub CLI and log in (needed for repo_search).
 # Safe to re-run to update. uninstall.ps1 removes it all again.
 #
 # Environment variables:
 #   APPFORGE_MINIMAL=1       skip step 4 (downloads happen on first use or with `appforge setup`)
+#   APPFORGE_MODELS=<name>   model profile for step 4 without asking: small, balanced or best
 #   APPFORGE_AUTO_INSTALL=1  install the GitHub CLI without asking
 #   APPFORGE_NO_EXTRAS=1     never offer the GitHub CLI
 #   APPFORGE_NO_REGISTER=1   do not change VS Code / Claude Code settings
@@ -207,8 +209,14 @@ Build-AppForge $dir $node
 Install-Shim $dir $node
 
 if ($env:APPFORGE_MINIMAL -ne "1") {
-    Invoke-Native { & $node (Join-Path $dir "dist\server\src\cli.js") setup all }
-    if ($LASTEXITCODE -ne 0) { Write-Warning "Some downloads failed; retry later with: appforge setup" }
+    $cli = Join-Path $dir "dist\server\src\cli.js"
+    Invoke-Native { & $node $cli setup browser }
+    $failed = $LASTEXITCODE -ne 0
+    # Not through Invoke-Native: the model-profile chooser shows a table and asks, so it needs the console itself.
+    $saved = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $node $cli setup models } finally { $ErrorActionPreference = $saved }
+    if ($failed -or $LASTEXITCODE -ne 0) { Write-Warning "Some downloads failed; retry later with: appforge setup" }
 }
 
 Invoke-Extras

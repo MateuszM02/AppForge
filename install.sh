@@ -12,13 +12,14 @@
 #      (macOS: ~/Library/Application Support/AppForge/app).
 #   2. Puts a private Node.js 24 LTS next to it (checked against nodejs.org's SHA-256 list); your own Node is not touched.
 #   3. Installs the dependencies and builds AppForge (only when the version changed).
-#   4. Downloads the Camoufox browser (~300 MB) and two ranking models (~180 MB).
+#   4. Downloads the Camoufox browser (~300 MB) and the repo-search models: asks for a profile, small / balanced /
+#      best (about 1.3 / 1.5 / 3.0 GB), showing the estimated search time on this computer; Enter = best.
 #   5. Adds the `appforge` command (~/.local/bin) and registers AppForge in VS Code and Claude Code.
 #   6. Offers to log in to GitHub with the GitHub CLI if it is installed (needed for repo_search).
 # Safe to re-run to update. uninstall.sh removes it all again.
 #
-# Environment variables: APPFORGE_MINIMAL=1, APPFORGE_AUTO_INSTALL=1, APPFORGE_NO_EXTRAS=1, APPFORGE_NO_REGISTER=1,
-# APPFORGE_DIR, APPFORGE_REF (same meaning as in install.ps1).
+# Environment variables: APPFORGE_MINIMAL=1, APPFORGE_MODELS=small|balanced|best, APPFORGE_AUTO_INSTALL=1,
+# APPFORGE_NO_EXTRAS=1, APPFORGE_NO_REGISTER=1, APPFORGE_DIR, APPFORGE_REF (same meaning as in install.ps1).
 
 set -eu
 
@@ -153,7 +154,15 @@ CLI="$APP_DIR/dist/server/src/cli.js"
 NODE="$NODE_DIR/bin/node"
 
 if [ "${APPFORGE_MINIMAL:-}" != "1" ]; then
-  "$NODE" "$CLI" setup all || echo "Some downloads failed; retry later with: appforge setup"
+  failed=0
+  "$NODE" "$CLI" setup browser || failed=1
+  # The model-profile chooser asks a question; with curl | sh, stdin is the script, so it reads the terminal instead.
+  if (exec < /dev/tty) 2>/dev/null; then
+    "$NODE" "$CLI" setup models < /dev/tty || failed=1
+  else
+    "$NODE" "$CLI" setup models || failed=1
+  fi
+  [ "$failed" = 0 ] || echo "Some downloads failed; retry later with: appforge setup"
 fi
 extras
 if [ "${APPFORGE_NO_REGISTER:-}" != "1" ]; then

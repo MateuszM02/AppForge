@@ -6,7 +6,7 @@ import type { CallToolResult, ServerNotification, ServerRequest } from '@modelco
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import { fail, json, safe, text, type ForgeContext } from '../../server/src/context.js';
 import { githubToken, ghApi, ghHeadSha, ghRaw, ghTree, parseRepo } from '../../server/src/github.js';
-import { getSearch, isRunningHere, radar, startSearch, type RadarResult, type RadarSearch } from './radar.js';
+import { getSearch, isRunningHere, radar, searchSettings, startSearch, type RadarResult, type RadarSearch, type RadarStats } from './radar.js';
 
 type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
@@ -25,7 +25,7 @@ function formatResult(r: RadarResult): string {
   const head = `${r.rank ?? '?'}. ${r.repo.fullName} (${m.stars ?? '?'}★, ${r.repo.language ?? '?'}, ${r.repo.license ?? 'no licence'})`;
   const scores = `   total ${n(r.scores.total)} | fit ${n(r.scores.fit)} | future ${n(r.scores.future)} | underrated ${n(r.scores.underrated)}`;
   const desc = r.repo.description ? `   ${r.repo.description}` : '';
-  const summary = r.analysis?.summary ? `   why: ${r.analysis.summary}` : '';
+  const summary = r.analysis?.summary && !/; fit \d+%, future \d+%\.$/.test(r.analysis.summary) ? `   why: ${r.analysis.summary}` : '';
   const risks = (r.analysis?.risks ?? []).slice(0, 3).map(riskText).filter(Boolean);
   const pushed = m.pushedAt ? `   last push ${m.pushedAt.slice(0, 10)}${m.latestReleaseAt ? `, last release ${m.latestReleaseAt.slice(0, 10)}` : ''}` : '';
   return [head, desc, scores, summary, risks.length ? `   risks: ${risks.join('; ')}` : '', pushed, `   ${r.repo.url ?? ''}`].filter(Boolean).join('\n');
@@ -46,8 +46,26 @@ function formatSearch(s: RadarSearch): string {
   const hiddenNote = others.length
     ? `\n\n(${others.length} more matched but have other licences: ${[...new Set(others.map((r) => r.repo.license ?? 'none'))].join(', ')}.)`
     : '';
-  if (!results.length) return `No good matches for "${s.prompt}". Try describing the need differently or loosen the filters.${hiddenNote}`;
-  return `Best matches for "${s.prompt}" (scores 0-1; fit = matches the need, future = maintenance outlook, underrated = good but little known):\n\n${results.map(formatResult).join('\n\n')}${hiddenNote}\n\nNext: repo_details or repo_read_file to look closer.`;
+  const footer = s.stats ? `\n\n${formatStats(s.stats)}` : '';
+  if (!results.length) return `No good matches for "${s.prompt}". Try describing the need differently or loosen the filters.${hiddenNote}${footer}`;
+  return `Best matches for "${s.prompt}" (scores 0-1; fit = matches the need, future = maintenance outlook, underrated = good but little known):\n\n${results.map(formatResult).join('\n\n')}${hiddenNote}\n\nNext: repo_details or repo_read_file to look closer.${footer}`;
+}
+
+/** One line on what each stage did, so the agent (and the user) can judge how far to trust the list. */
+export function formatStats(st: RadarStats): string {
+  const r = st.rank;
+  const llm = {
+    used: `the local LLM picked the final list${st.llmDropped ? ` and dropped ${st.llmDropped} as off-topic` : ''}`,
+    off: 'the LLM pick is off (repos.llm), so this is the cross-encoder order',
+    unavailable: 'the local LLM is not available (run `appforge setup models`), so this is the cross-encoder order',
+    failed: 'the local LLM did not answer in time, so this is the cross-encoder order',
+  }[st.llm];
+  const stages = r
+    ? `${st.pool} candidates from ${st.queries.length} GitHub searches; ` +
+      `the embedding model dropped ${r.belowSimilarity} and passed ${r.reranked} to the cross-encoder, which dropped ${r.belowRerankScore} and kept ${r.finalists}; ${llm}.`
+    : `${st.pool} candidates; ${llm}.`;
+  const secs = Object.values(st.seconds).reduce((a, b) => a + b, 0);
+  return `How this was found: ${stages} (${Math.round(secs)} s)`;
 }
 
 async function waitFor(id: string, seconds: number, extra: Extra): Promise<RadarSearch | null> {
@@ -77,7 +95,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
 
 /** RepoRadar's evidence and assessment for one repository (needs a GitHub login), never waiting forever. */
 async function fullDetails(owner: string, repo: string, need: string | undefined, what: string) {
-  return withTimeout((await radar()).repoDetails(`${owner}/${repo}`, need), 150_000, what);
+  return withTimeout((await radar()).repoDetails(`${owner}/${repo}`, need, searchSettings().rerank), 150_000, what);
 }
 
 /**
@@ -111,8 +129,9 @@ export function registerRepoTools(ctx: ForgeContext): void {
       description:
         'Find GitHub repositories by what they should do, not by name ("self-hosted markdown wiki with git sync", ' +
         '"alternative to Firebase Auth for Next.js"). Searches GitHub several ways plus awesome-lists and package registries, ' +
-        'ranks with local embeddings and evidence (README, releases, issues, contributors) and flags risks. Takes about a ' +
-        'minute; if it is not done in time you get an id for repo_search_result. Use before building something new.',
+        'then narrows a pool of up to a few thousand repositories with local models (an embedding model, a cross-encoder and a ' +
+        'small LLM, all on this computer) and flags risks from evidence (releases, issues, contributors). Takes 1-3 ' +
+        'minutes; if it is not done in time you get an id for repo_search_result. Use before building something new.',
       inputSchema: {
         need: z.string().min(3).describe('What the project should do, in plain words.'),
         language: z.string().optional().describe('Programming language, e.g. TypeScript.'),

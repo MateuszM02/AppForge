@@ -1,6 +1,6 @@
 {
   "name": "appforge",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "description": "One local MCP server that helps any AI agent find, create and improve apps: stealth browser, semantic GitHub repo search, Anthropic skills and plugins, and a local memory.",
   "license": "MIT",
   "author": "MateuszM02",
@@ -21,7 +21,7 @@
     "build:ts": "tsc -p tsconfig.json",
     "build:reporadar": "node scripts/build-reporadar.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test --test-concurrency=1 \"dist/tests/**/*.test.js\"",
+    "test": "node --test \"dist/tests/**/*.test.js\"",
     "smoke": "node scripts/smoke.mjs",
     "serve": "node dist/server/src/cli.js serve",
     "camofox:fetch": "node camofox-browser/upstream/postinstall.js"

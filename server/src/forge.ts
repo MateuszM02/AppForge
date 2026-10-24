@@ -52,6 +52,13 @@ export async function status() {
   const cfg = loadConfig();
   const { camoufoxInstalled } = await import('../../camofox-browser/src/manager.js');
   const models = paths.models;
+  const { resolveModels } = await import('./models.js');
+  const rm = resolveModels(cfg.repos);
+  const present = {
+    embedding: exists(path.join(models, ...rm.embed.id.split('/'))),
+    crossEncoder: exists(path.join(models, ...rm.rerank.id.split('/'))),
+    llm: exists(path.join(models, 'llm', rm.llm.file)) || exists(rm.llm.uri),
+  };
   return {
     version: VERSION,
     newerVersion: latestKnownVersion(),
@@ -63,7 +70,13 @@ export async function status() {
     browser: { camoufoxDownloaded: camoufoxInstalled() },
     repos: {
       pipelineBuilt: exists(path.join(repoRoot, 'dist', 'reporadar', 'headless.mjs')),
-      modelsDownloaded: exists(models) && fs.readdirSync(models).length > 0,
+      modelProfile: rm.profile,
+      models: {
+        embedding: { id: rm.embed.id, downloaded: present.embedding },
+        crossEncoder: { id: rm.rerank.id, downloaded: present.crossEncoder },
+        llm: { file: rm.llm.file, downloaded: present.llm, pick: cfg.repos.llm },
+      },
+      modelsDownloaded: present.embedding && present.crossEncoder && (present.llm || !cfg.repos.llm),
       needsGithubLogin: githubToken() === null,
     },
     memory: { folder: paths.memory, limits: cfg.memory },

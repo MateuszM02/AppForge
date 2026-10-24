@@ -4,7 +4,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { loadConfig } from '../../server/src/config.js';
 import { githubToken } from '../../server/src/github.js';
+import { resolveModels, type EncoderModel, type LlmModel } from '../../server/src/models.js';
 import { paths, repoRoot } from '../../server/src/paths.js';
 
 export interface RadarFilters {
@@ -23,6 +25,18 @@ export interface RadarResult {
   metrics: { stars?: number; forks?: number; contributors?: number; releaseCount?: number; latestReleaseAt?: string | null; pushedAt?: string | null; openIssues?: number } | null;
 }
 
+/** What each pipeline stage did (RepoRadar/headless/pipeline.ts SearchStats). */
+export interface RadarStats {
+  queries: string[];
+  topics: string[];
+  pool: number;
+  githubCalls: number;
+  rank: { pool: number; belowSimilarity: number; reranked: number; belowRerankScore: number; finalists: number } | null;
+  llm: 'used' | 'off' | 'unavailable' | 'failed';
+  llmDropped: number;
+  seconds: Record<string, number>;
+}
+
 export interface RadarSearch {
   searchId: string;
   status: string;
@@ -31,12 +45,31 @@ export interface RadarSearch {
   error: string | null;
   prompt: string | null;
   results: RadarResult[];
+  stats: RadarStats | null;
+}
+
+/** The settings of one search, built from the config and the model profile. */
+export interface SearchSettings {
+  poolSize: number;
+  embed: { id: string; pooling?: 'mean' | 'cls' };
+  /** readme: whether this cross-encoder reads the start of each README. */
+  rerank: { id: string; readme?: boolean };
+  minSimilarity: number;
+  rerankPool: number;
+  minRerankScore: number;
+  finalists: number;
+  llm: boolean;
+  /** The GGUF file of the local LLM, or null when it is not downloaded. */
+  llmModelPath: string | null;
+  llmTimeoutSeconds: number;
+  llmIdleMinutes: number;
+  cacheDir: string;
 }
 
 interface Headless {
-  startSearch(prompt: string, filters?: RadarFilters): Promise<{ id: string; done: Promise<void> }>;
+  startSearch(prompt: string, filters: RadarFilters, settings: SearchSettings): Promise<{ id: string; done: Promise<void> }>;
   getSearch(id: string): Promise<RadarSearch | null>;
-  repoDetails(fullName: string, need?: string): Promise<{ evidence: Record<string, unknown>; analysis: Record<string, unknown> } | null>;
+  repoDetails(fullName: string, need?: string, rerank?: SearchSettings['rerank']): Promise<{ evidence: Record<string, unknown>; analysis: Record<string, unknown> } | null>;
 }
 
 let loaded: Promise<Headless> | null = null;
@@ -48,17 +81,47 @@ export function radar(): Promise<Headless> {
     const token = githubToken();
     // RepoRadar reads its settings from the environment once, when it loads.
     process.env.DATABASE_URL ??= 'appforge-sqlite';
-    process.env.NO_LLM_MODE = 'true';
+    // Upstream's LLM path is on only with NO_LLM_MODE off and a non-empty OpenRouter key. The key is a dummy: the
+    // bundler replaces the OpenAI client with openai-local.ts, which runs the listwise ranker on a local model and
+    // refuses every other prompt, so nothing is sent anywhere.
+    process.env.NO_LLM_MODE = 'false';
+    process.env.OPENROUTER_API_KEY = 'appforge-local';
     if (token) process.env.GITHUB_TOKEN = token;
     process.env.APPFORGE_RADAR_DB_DIR = paths.cache;
     process.env.APPFORGE_MODELS_DIR = paths.models;
-    process.env.CROSS_ENCODER_RERANK ??= 'true';
     return (await import(pathToFileURL(bundle).href)) as Headless;
   })();
   loaded.catch(() => {
     loaded = null;
   });
   return loaded;
+}
+
+/** Where a profile's GGUF lives (models/llm/<file>), or null when it is not there yet. */
+export function llmPath(m: LlmModel): string | null {
+  const file = fs.existsSync(m.uri) ? m.uri : path.join(paths.models, 'llm', m.file);
+  return fs.existsSync(file) ? file : null;
+}
+
+const spec = (m: EncoderModel) => ({ id: m.id, pooling: m.pooling, readme: m.readme });
+
+export function searchSettings(): SearchSettings {
+  const c = loadConfig().repos;
+  const m = resolveModels(c);
+  return {
+    poolSize: m.poolSize,
+    embed: spec(m.embed),
+    rerank: spec(m.rerank),
+    minSimilarity: c.minSimilarity,
+    rerankPool: m.rerankPool,
+    minRerankScore: c.minRerankScore,
+    finalists: c.finalists,
+    llm: c.llm,
+    llmModelPath: llmPath(m.llm),
+    llmTimeoutSeconds: c.llmTimeoutSeconds,
+    llmIdleMinutes: c.llmIdleMinutes,
+    cacheDir: paths.cache,
+  };
 }
 
 /** Searches started in this process (the pipeline keeps running after repo_search returns). */
@@ -72,7 +135,7 @@ export async function startSearch(prompt: string, filters: RadarFilters): Promis
     );
   }
   const r = await radar();
-  const { id, done } = await r.startSearch(prompt, filters);
+  const { id, done } = await r.startSearch(prompt, filters, searchSettings());
   running.set(id, done);
   void done.finally(() => running.delete(id));
   return id;
@@ -86,14 +149,17 @@ export function isRunningHere(id: string): boolean {
   return running.has(id);
 }
 
-/** Downloads the two local models RepoRadar ranks with (about 180 MB, once). */
-export async function prefetchModels(): Promise<string[]> {
-  const t = await import('@huggingface/transformers');
-  t.env.cacheDir = paths.models;
-  const embed = await t.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { dtype: 'fp32' });
-  await embed('warm up', { pooling: 'mean', normalize: true });
-  const rerank = process.env.RERANK_MODEL || 'Xenova/ms-marco-MiniLM-L-6-v2';
-  await t.AutoTokenizer.from_pretrained(rerank);
-  await t.AutoModelForSequenceClassification.from_pretrained(rerank, { dtype: 'fp32' });
-  return ['Xenova/all-MiniLM-L6-v2', rerank];
+/** Downloads the local models of a profile (default: the configured one) and loads each once. */
+export async function prefetchModels(profile?: string): Promise<string[]> {
+  const enc = await import('../headless/encoders.js');
+  enc.setModelsDir(paths.models);
+  const c = loadConfig().repos;
+  const m = resolveModels({ ...c, modelProfile: profile ?? c.modelProfile });
+  await enc.warm(spec(m.embed), 'embed');
+  await enc.warm(spec(m.rerank), 'rerank');
+  if (!llmPath(m.llm)) {
+    const { resolveModelFile } = await import('node-llama-cpp');
+    await resolveModelFile(m.llm.uri, { directory: path.join(paths.models, 'llm'), fileName: m.llm.file, cli: process.stderr.isTTY === true });
+  }
+  return [m.embed.id, m.rerank.id, m.llm.file];
 }

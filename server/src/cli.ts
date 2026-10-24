@@ -13,7 +13,9 @@ Usage: appforge <command>
   doctor                      check what works and what is missing
   register [clients]          add AppForge to vscode, claude or all (default all)
   unregister [clients]        remove it again
-  setup [browser|models|all]  download the Camoufox browser (~300 MB) and the ranking models (~180 MB)
+  setup [browser|models|all] [small|balanced|best]
+                              download the Camoufox browser (~300 MB) and the repo-search models
+                              (a profile: about 1.3 / 1.5 / 3.0 GB; asks which when run in a terminal)
   memory stats|list|consolidate|reset [--empty]|path
   skills sync [--force] | skills list
   config list | config get <key> | config set <key> <value> | config path
@@ -53,7 +55,7 @@ async function main(argv: string[]): Promise<number> {
       return results.some((r) => r.status === 'failed') ? 1 : 0;
     }
     case 'setup':
-      return setup(sub ?? 'all');
+      return setup(sub ?? 'all', rest[0]);
     case 'memory':
       return memory(sub, rest);
     case 'skills': {
@@ -89,7 +91,7 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
-async function setup(what: string): Promise<number> {
+async function setup(what: string, profileArg?: string): Promise<number> {
   let code = 0;
   if (what === 'browser' || what === 'all') {
     const { camoufoxInstalled, fetchCamoufox } = await import('../../camofox-browser/src/manager.js');
@@ -103,16 +105,110 @@ async function setup(what: string): Promise<number> {
     }
   }
   if (what === 'models' || what === 'all') {
-    console.log('Getting the repo-ranking models (about 180 MB the first time)...');
     try {
+      const profile = await chooseProfile(profileArg);
+      setSetting('repos.modelProfile', profile);
+      const { downloadMB } = await import('./models.js');
+      console.log(`Getting the "${profile}" repo-search models (up to ${(downloadMB(profile) / 1000).toFixed(1)} GB the first time)...`);
       const { prefetchModels } = await import('../../RepoRadar/src/radar.js');
-      console.log(`Models ready: ${(await prefetchModels()).join(', ')}`);
+      console.log(`Models ready: ${(await prefetchModels(profile)).join(', ')}`);
+      await offerCleanup(profile);
     } catch (e) {
-      console.error(`Model download failed: ${e instanceof Error ? e.message : String(e)}. repo_search downloads them on first use instead.`);
+      console.error(`Model download failed: ${e instanceof Error ? e.message : String(e)}. Retry with \`appforge setup models\`.`);
       code = 1;
     }
   }
   return code;
+}
+
+async function ask(question: string): Promise<string> {
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return (await rl.question(question)).trim().toLowerCase();
+  } finally {
+    rl.close();
+  }
+}
+
+/** The GPU node-llama-cpp would use here ("vulkan", "cuda", "metal"), or false for CPU only. */
+async function detectGpu(): Promise<string | false> {
+  try {
+    const { getLlama, LlamaLogLevel } = await import('node-llama-cpp');
+    const llama = await getLlama({ gpu: process.env.APPFORGE_LLM_GPU === 'off' ? false : 'auto', build: 'never', progressLogs: false, logLevel: LlamaLogLevel.error });
+    const gpu = llama.gpu;
+    await llama.dispose();
+    return gpu;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The model profile: from the command line or APPFORGE_MODELS, else asked in a terminal with a table of sizes, speed
+ * estimates for this machine and measured quality (Enter = best), else the configured one.
+ */
+async function chooseProfile(arg?: string): Promise<import('./models.js').ProfileName> {
+  const m = await import('./models.js');
+  const given = arg ?? process.env.APPFORGE_MODELS;
+  if (given) {
+    if (!m.isProfile(given)) throw new Error(`Unknown model profile "${given}": use small, balanced or best.`);
+    return given;
+  }
+  const current = loadConfig().repos.modelProfile;
+  if (!process.stdin.isTTY) return m.isProfile(current) ? current : 'best';
+  const gpu = await detectGpu();
+  const probe = m.probeMs();
+  console.log(`\nrepo_search ranks results with three local models. Choose a profile (${m.cpuSummary()}, ${gpu ? `GPU: ${gpu}` : 'no GPU found, so the LLM runs on the CPU'}):\n`);
+  console.log('  profile    download   time per search*   quality**   models');
+  for (const name of m.PROFILE_NAMES) {
+    const p = m.PROFILES[name];
+    const est = m.estimateSeconds(name, { probeMs: probe, gpu: gpu !== false });
+    const time = est ? `${est.low}-${est.high} s` : 'not measured';
+    const quality = p.quality != null ? p.quality.toFixed(2) : '-';
+    const models = [m.ENCODERS[p.embed]!.id, m.ENCODERS[p.rerank]!.id, m.LLMS[p.llm]!.file].map((x) => x.split('/').pop()!.replace(/-Q4_K_M\.gguf$/, '')).join(', ');
+    console.log(`  ${name.padEnd(9)}  ${`${(m.downloadMB(name) / 1000).toFixed(1)} GB`.padStart(8)}   ${time.padStart(16)}   ${quality.padStart(9)}   ${models}`);
+  }
+  console.log(`\n  * estimated for this computer from measurements on a ${m.REFERENCE.machine}`);
+  console.log('  ** nDCG@10 on the AppForge search test set (0-1, higher is better)\n');
+  for (;;) {
+    const a = await ask('Profile [small/balanced/best] (Enter = best): ');
+    if (!a) return 'best';
+    if (m.isProfile(a)) return a;
+    console.log('Please type small, balanced or best.');
+  }
+}
+
+/** Offers to delete downloaded models the chosen profile does not use (only models listed in models.ts). */
+async function offerCleanup(profile: import('./models.js').ProfileName): Promise<void> {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const m = await import('./models.js');
+  const keep = m.PROFILES[profile];
+  const unused: string[] = [];
+  for (const [key, e] of Object.entries(m.ENCODERS)) {
+    const dir = path.join(paths.models, ...e.id.split('/'));
+    if (key !== keep.embed && key !== keep.rerank && fs.existsSync(dir)) unused.push(dir);
+  }
+  for (const [key, l] of Object.entries(m.LLMS)) {
+    const file = path.join(paths.models, 'llm', l.file);
+    if (key !== keep.llm && fs.existsSync(file)) unused.push(file);
+  }
+  if (!unused.length) return;
+  const size = (p: string): number => {
+    const st = fs.statSync(p);
+    return st.isDirectory() ? fs.readdirSync(p).reduce((sum, f) => sum + size(path.join(p, f)), 0) : st.size;
+  };
+  const gb = unused.reduce((sum, p) => sum + size(p), 0) / 1e9;
+  if (!process.stdin.isTTY) {
+    console.log(`${gb.toFixed(1)} GB of models from other profiles stay in ${paths.models} (run \`appforge setup models\` in a terminal to remove them).`);
+    return;
+  }
+  const a = await ask(`Remove ${gb.toFixed(1)} GB of models the "${profile}" profile does not use? [Y/n] `);
+  if (a === '' || a.startsWith('y')) {
+    for (const p of unused) fs.rmSync(p, { recursive: true, force: true });
+    console.log('Removed.');
+  }
 }
 
 async function memory(sub: string | undefined, rest: string[]): Promise<number> {
@@ -149,7 +245,7 @@ async function doctor(): Promise<number> {
   if (s.newerVersion) console.log(`  update:         ${s.newerVersion} is available`);
   console.log(`\n  ${ok(s.repos.pipelineBuilt)} repo search pipeline built`);
   console.log(`  ${ok(s.github.tokenFound)} GitHub login (needed for repo_search; run \`gh auth login\` or set GITHUB_TOKEN)`);
-  console.log(`  ${ok(s.repos.modelsDownloaded)} ranking models downloaded (\`appforge setup models\`, or on first search)`);
+  console.log(`  ${ok(s.repos.modelsDownloaded)} repo-search models of the "${s.repos.modelProfile}" profile downloaded (\`appforge setup models\` gets or changes them)`);
   console.log(`  ${ok(s.browser.camoufoxDownloaded)} Camoufox browser downloaded (\`appforge setup browser\`)`);
   const { memoryService } = await import('../../memory/src/tools.js');
   const st = (await memoryService({ config: loadConfig })).stats();

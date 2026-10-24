@@ -25,8 +25,9 @@
     "RepoRadar/src/**/*.ts",
     "RepoRadar/headless/prisma-shim.ts",
     "RepoRadar/headless/fetch.ts",
-    "RepoRadar/headless/local-llm.ts",
     "RepoRadar/headless/openai-local.ts",
+    "RepoRadar/headless/encoders.ts",
+    "RepoRadar/headless/rank.ts",
     "tests/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "**/upstream/src/postinstall.ts"]

@@ -1,0 +1,116 @@
+// The local AI models of repo_search and the three install profiles that pick them together. Sizes are the
+// downloads; quality and timings were measured with scripts/eval-search.mjs on the reference machine, and
+// estimateSeconds() scales them to this one with a quick speed probe.
+
+import os from 'node:os';
+
+export interface EncoderModel {
+  /** Hugging Face id with ONNX weights (the int8 file is used). */
+  id: string;
+  kind: 'embed' | 'rerank';
+  mb: number;
+  pooling?: 'mean' | 'cls';
+  /** Cross-encoders: whether the start of the README helps (it does for ms-marco, it hurts mxbai). */
+  readme?: boolean;
+}
+
+export const ENCODERS: Record<string, EncoderModel> = {
+  minilm: { id: 'Xenova/all-MiniLM-L6-v2', kind: 'embed', mb: 23, pooling: 'mean' },
+  'msmarco-l6': { id: 'Xenova/ms-marco-MiniLM-L-6-v2', kind: 'rerank', mb: 23, readme: true },
+  'mxbai-base': { id: 'mixedbread-ai/mxbai-rerank-base-v1', kind: 'rerank', mb: 245, readme: false },
+};
+
+/** Local LLMs for the final pick, Q4_K_M GGUF, stored in models/llm under their file name. Also tried (labelled listwise
+ * request, Radeon RX 6800): granite-4.0-h-tiny and granite-4.0-h-micro kept traps; Ministral-3-3B was right and quick on a
+ * short request but in real searches (longer README excerpts) took 55 s per pick against Qwen3.5-4B's 41 s and ranked
+ * worse; Qwen3-1.7B read the prompt at half Qwen3.5's speed. */
+export interface LlmModel {
+  uri: string;
+  file: string;
+  mb: number;
+}
+
+export const LLMS: Record<string, LlmModel> = {
+  'qwen3.5-2b': { uri: 'hf:unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q4_K_M.gguf', file: 'Qwen3.5-2B-Q4_K_M.gguf', mb: 1281 },
+  'qwen3.5-4b': { uri: 'hf:unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_K_M.gguf', file: 'Qwen3.5-4B-Q4_K_M.gguf', mb: 2741 },
+};
+
+export type ProfileName = 'small' | 'balanced' | 'best';
+export const PROFILE_NAMES: ProfileName[] = ['small', 'balanced', 'best'];
+
+/** Seconds per search on the reference machine, split by what they depend on: GitHub, the encoders (CPU), the LLM. */
+export interface Timings {
+  github: number;
+  encoders: number;
+  llmGpu: number;
+  llmCpu: number;
+}
+
+export interface Profile {
+  embed: string;
+  rerank: string;
+  llm: string;
+  /** Candidates fetched (about 500 already hold almost every must-have answer of the test set) and how many of them
+   * the cross-encoder reads: 150 ranked as well as 300 on the test set, in half the time. */
+  poolSize: number;
+  rerankPool: number;
+  /** nDCG@10 on 4 prompts of tests/search-gold.json (PDF, habit, react table, screen recorder) and the reference
+   * timings (10 finalists), from scripts/eval-search.mjs; llmCpu scales a CPU-only run of 15 finalists to 10. */
+  quality: number | null;
+  timings: Timings | null;
+}
+
+export const PROFILES: Record<ProfileName, Profile> = {
+  small: { embed: 'minilm', rerank: 'msmarco-l6', llm: 'qwen3.5-2b', poolSize: 500, rerankPool: 150, quality: 0.68, timings: { github: 19, encoders: 7.5, llmGpu: 20, llmCpu: 61 } },
+  balanced: { embed: 'minilm', rerank: 'mxbai-base', llm: 'qwen3.5-2b', poolSize: 1000, rerankPool: 150, quality: 0.49, timings: { github: 20, encoders: 5.4, llmGpu: 20, llmCpu: 61 } },
+  best: { embed: 'minilm', rerank: 'mxbai-base', llm: 'qwen3.5-4b', poolSize: 2000, rerankPool: 150, quality: 0.7, timings: { github: 22, encoders: 7.9, llmGpu: 25, llmCpu: 260 } },
+};
+
+export const isProfile = (name: string): name is ProfileName => (PROFILE_NAMES as string[]).includes(name);
+
+/** The models and sizes of the configured profile; non-empty settings win (a model key, a Hugging Face id, a GGUF). */
+export function resolveModels(r: { modelProfile: string; embedModel: string; rerankModel: string; llmModel: string; poolSize: number; rerankPool: number }) {
+  const profile: ProfileName = isProfile(r.modelProfile) ? r.modelProfile : 'best';
+  const p = PROFILES[profile];
+  const encoder = (key: string, kind: 'embed' | 'rerank'): EncoderModel => ENCODERS[key] ?? { id: key, kind, mb: 0, pooling: 'mean', readme: true };
+  const llmKey = r.llmModel || p.llm;
+  return {
+    profile,
+    embed: encoder(r.embedModel || p.embed, 'embed'),
+    rerank: encoder(r.rerankModel || p.rerank, 'rerank'),
+    llm: LLMS[llmKey] ?? { uri: llmKey, file: llmKey.split(/[\\/]/).pop()!, mb: 0 },
+    poolSize: r.poolSize > 0 ? r.poolSize : p.poolSize,
+    rerankPool: r.rerankPool > 0 ? r.rerankPool : p.rerankPool,
+  };
+}
+
+export const downloadMB = (name: ProfileName) => ENCODERS[PROFILES[name].embed]!.mb + ENCODERS[PROFILES[name].rerank]!.mb + LLMS[PROFILES[name].llm]!.mb;
+
+/** The reference machine of the timings, and its result on probeMs(). */
+export const REFERENCE = { probeMs: 35, machine: 'Ryzen 9 5950X with a Radeon RX 6800 (Vulkan)' };
+
+/** A fixed float workload, similar in kind to model inference; the best of three runs, in milliseconds. */
+export function probeMs(): number {
+  const n = 320;
+  const a = new Float32Array(n * n).fill(0.5);
+  const c = new Float32Array(n * n);
+  let best = Infinity;
+  for (let round = 0; round < 3; round++) {
+    const t = performance.now();
+    for (let i = 0; i < n; i++) for (let k = 0; k < n; k++) for (let j = 0; j < n; j++) c[i * n + j]! += a[i * n + k]! * a[k * n + j]!;
+    best = Math.min(best, performance.now() - t);
+  }
+  return best + (c[0]! > 1e12 ? 1 : 0);
+}
+
+/** Estimated seconds per search here: GitHub time as measured, CPU-bound parts scaled by the probe, the LLM on a GPU
+ * as measured on the reference GPU. */
+export function estimateSeconds(name: ProfileName, here: { probeMs: number; gpu: boolean }): { low: number; high: number } | null {
+  const t = PROFILES[name].timings;
+  if (!t || !REFERENCE.probeMs) return null;
+  const ratio = Math.max(0.25, here.probeMs / REFERENCE.probeMs);
+  const est = t.github + t.encoders * ratio + (here.gpu ? t.llmGpu : t.llmCpu * ratio);
+  return { low: Math.max(1, Math.round(est * 0.75)), high: Math.round(est * 1.5) };
+}
+
+export const cpuSummary = () => `${os.cpus()[0]?.model.trim() ?? 'CPU'} (${os.cpus().length} threads)`;
