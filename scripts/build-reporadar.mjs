@@ -3,7 +3,8 @@
 //   @/...                  -> RepoRadar/upstream/src/...
 //   @prisma/client, @/lib/db -> RepoRadar/headless/prisma-shim.ts (SQLite instead of PostgreSQL)
 //   @xenova/transformers   -> @huggingface/transformers (same API; prebuilt binaries, no install scripts)
-//   openai, next/cache     -> stubs (AppForge never calls an LLM; no Next.js)
+//   openai                 -> RepoRadar/headless/openai-local.ts (only the listwise ranker, on a local model)
+//   next/cache             -> stub (no Next.js)
 // npm packages stay external and load from node_modules.
 
 import fs from 'node:fs';
@@ -18,7 +19,7 @@ const headless = path.join(root, 'RepoRadar', 'headless');
 const redirects = {
   '@prisma/client': path.join(headless, 'prisma-shim.ts'),
   '@/lib/db': path.join(headless, 'prisma-shim.ts'),
-  openai: path.join(headless, 'openai-stub.ts'),
+  openai: path.join(headless, 'openai-local.ts'),
   'next/cache': path.join(headless, 'next-cache-stub.ts'),
 };
 
