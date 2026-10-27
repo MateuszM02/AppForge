@@ -218,8 +218,13 @@ const cursorAt = (offset: number) => (offset ? Buffer.from(`cursor:${offset}`).t
  * Fetches the queries through GraphQL search (100 repos per call, at most 1,000 per query) in two parallel rounds: the
  * first page of every query, then all the further pages needed for `poolSize`, lowest pages first. Archived repos
  * and forks are dropped. The pool is ordered by page, then query, so it does not depend on which call returned first.
+ * onFirstPages gets the first pages' repos as soon as they are in, while the further pages are fetched.
  */
-export async function fetchPool(queries: string[], o: { poolSize: number; concurrency?: number; pages?: number }, deps: { client: GitHubClient }) {
+export async function fetchPool(
+  queries: string[],
+  o: { poolSize: number; concurrency?: number; pages?: number; onFirstPages?: (candidates: Candidate[]) => void },
+  deps: { client: GitHubClient },
+) {
   const started = Date.now();
   const pages: Candidate[][][] = queries.map(() => []);
   const totals = queries.map(() => 0);
@@ -251,8 +256,12 @@ export async function fetchPool(queries: string[], o: { poolSize: number; concur
       }
     }
   }
+  const merged = () => {
+    const pool = new Map<string, Candidate>();
+    for (let page = 0; page < 10; page++) for (const q of pages) for (const c of q[page] ?? []) if (!pool.has(c.fullName.toLowerCase())) pool.set(c.fullName.toLowerCase(), c);
+    return [...pool.values()].slice(0, o.poolSize);
+  };
+  o.onFirstPages?.(merged());
   await runAll(more);
-  const pool = new Map<string, Candidate>();
-  for (let page = 0; page < 10; page++) for (const q of pages) for (const c of q[page] ?? []) if (!pool.has(c.fullName.toLowerCase())) pool.set(c.fullName.toLowerCase(), c);
-  return { candidates: [...pool.values()].slice(0, o.poolSize), calls, errors, seconds: (Date.now() - started) / 1000 };
+  return { candidates: merged(), calls, errors, seconds: (Date.now() - started) / 1000 };
 }

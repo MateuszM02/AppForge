@@ -10,11 +10,13 @@ pipeline ([headless/pipeline.ts](headless/pipeline.ts)) that reuses upstream's m
 1. **Fetch** ([headless/fetch.ts](headless/fetch.ts), [headless/search.ts](headless/search.ts)): LLM-free queries
    (stoplist, synonyms such as txt→text and scrape→scraping, "X to Y" phrases, a named language as a `language:`
    qualifier; kinds of project such as "library" never make a query alone), GitHub topics close to the need, and paged
-   GraphQL search: 500-2,000 candidates. A second round searches the 5 topics most shared by the 30 best matches so far
-   (by embedding), which finds projects described in other words (scrapy for "scrape", logseq for "Notion").
+   GraphQL search: 500-2,000 candidates. A second round, started as soon as the first pages are in, searches 5 topics
+   shared by the 30 best matches so far (similarity and popularity), the more need-like half by the topic's own
+   embedding: it finds projects described in other words (scrapy for "scrape", speech-to-text for "transcribe").
 2. **Embed** ([headless/rank.ts](headless/rank.ts)): a small embedding model drops repos below a fixed similarity and
    keeps the K most promising, a third of them the most-starred, so established projects are not crowded out.
-3. **Rerank**: a cross-encoder reads the need with each of the K and drops what it rates below 0.01, so a famous
+3. **Rerank**: a cross-encoder reads the need with each of the K (the Qwen3 instruction and the query are evaluated
+   once and kept, so each repo costs only its own tokens: a third less time) and drops what it rates below 0.01, so a famous
    but unrelated repo never shows; the 10 best by 0.15 × its score + 0.5 × popularity (log stars) + credibility and
    recency are the results.
 4. **Evidence**: upstream's releases, issues, contributors and health score for the 10. Nothing is sent anywhere.
@@ -31,12 +33,13 @@ RAM is the free memory a profile needs; GPU memory holds all its models and thei
 
 | Profile | Download | RAM / GPU memory | Embedding | Cross-encoder | Pool / K | nDCG@10* |
 |---|---|---|---|---|---|---|
-| small | 0.7 GB | 4 / 2 GB | all-MiniLM-L6-v2 | Qwen3-Reranker-0.6B | 500 / 150 | 0.60 |
+| small | 0.7 GB | 4 / 2 GB | all-MiniLM-L6-v2 | Qwen3-Reranker-0.6B | 500 / 150 | 0.61 |
 | balanced | 0.7 GB | 4 / 2 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-0.6B | 1,000 / 150 | 0.61 |
-| best | 2.6 GB | 6 / 4 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-4B | 2,000 / 150 | 0.68 |
+| best | 2.6 GB | 6 / 4 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-4B | 2,000 / 150 | 0.70 |
 
 * on the 20 prompts of tests/search-gold.json (apps, self-hosted tools, "alternative to X", libraries in several
-languages, CLIs, ML, devops): worst prompt 0.17 / 0.00 / 0.00, standard deviation 0.21. On the first 10 of them,
+languages, CLIs, ML, devops): worst prompt 0.32 / 0.00 / 0.00, standard deviation 0.19 / 0.22 / 0.22; about 30 / 30 /
+45 s per search on a Radeon RX 6800, of which about 22 s is GitHub. On the first 10 of them,
 AppForge 0.1 scored 0.27 end to end, and its models (MiniLM + ms-marco-MiniLM-L-6) 0.37 with this fetch.
 
 Chosen with `node scripts/eval-search.mjs` (tests/search-gold.json) and fixed candidate pools of its first 10 prompts:

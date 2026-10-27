@@ -60,6 +60,10 @@ function recency(pushedAt: string | null, within: number | null | undefined): nu
   return days < 30 ? 1 : days < 90 ? 0.8 : days < 180 ? 0.6 : days < 365 ? 0.4 : 0.2;
 }
 
+/** Stage 2's order: embedding similarity blended with popularity (also how search.ts picks the repos whose topics it
+ * searches next). */
+export const gateScore = (sim: number, c: RankCandidate, small = false) => 0.65 * sim + 0.2 * prominence(c.stars, small) + 0.15 * credibility(c.stars, c.forks, small);
+
 export async function rankCandidates<C extends RankCandidate>(need: string, candidates: C[], s: RankSettings, deps: RankDeps) {
   const small = s.includeSmallProjects === true;
   const [queryVec, ...vecs] = await deps.embed([need, ...candidates.map(repoText)]);
@@ -67,7 +71,7 @@ export async function rankCandidates<C extends RankCandidate>(need: string, cand
   // In a pool of thousands, pure similarity fills the shortlist with small repos named after the need's words
   // ("habit-tracker" x 60) and pushes out the established projects. So two thirds of the K slots go by similarity
   // blended with the popularity priors, and one third to the most-starred repos above the floor.
-  const blend = (x: (typeof passed)[number]) => 0.65 * x.sim + 0.2 * prominence(x.c.stars, small) + 0.15 * credibility(x.c.stars, x.c.forks, small);
+  const blend = (x: (typeof passed)[number]) => gateScore(x.sim, x.c, small);
   passed.sort((a, b) => blend(b) - blend(a));
   const nBlend = s.rerankPool - Math.floor(s.rerankPool / 3);
   const rest = passed.slice(nBlend);

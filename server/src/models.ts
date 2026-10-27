@@ -70,9 +70,9 @@ export interface Profile {
 }
 
 export const PROFILES: Record<ProfileName, Profile> = {
-  small: { embed: 'minilm', rerank: 'qwen3-rerank-0.6b', poolSize: 500, rerankPool: 150, quality: 0.6, timings: { github: 18, encGpu: 6, encCpu: 30 }, hardware: { ramGB: 4, vramGB: 2 } },
-  balanced: { embed: 'granite-small', rerank: 'qwen3-rerank-0.6b', poolSize: 1000, rerankPool: 150, quality: 0.61, timings: { github: 24, encGpu: 7.5, encCpu: 35 }, hardware: { ramGB: 4, vramGB: 2 } },
-  best: { embed: 'granite-small', rerank: 'qwen3-rerank-4b', poolSize: 2000, rerankPool: 150, quality: 0.68, timings: { github: 30, encGpu: 29, encCpu: 150 }, hardware: { ramGB: 6, vramGB: 4 } },
+  small: { embed: 'minilm', rerank: 'qwen3-rerank-0.6b', poolSize: 500, rerankPool: 150, quality: 0.61, timings: { github: 22, encGpu: 5, encCpu: 25 }, hardware: { ramGB: 4, vramGB: 2 } },
+  balanced: { embed: 'granite-small', rerank: 'qwen3-rerank-0.6b', poolSize: 1000, rerankPool: 150, quality: 0.61, timings: { github: 22, encGpu: 6, encCpu: 30 }, hardware: { ramGB: 4, vramGB: 2 } },
+  best: { embed: 'granite-small', rerank: 'qwen3-rerank-4b', poolSize: 2000, rerankPool: 150, quality: 0.7, timings: { github: 25, encGpu: 17, encCpu: 110 }, hardware: { ramGB: 6, vramGB: 4 } },
 };
 
 export const isProfile = (name: string): name is ProfileName => (PROFILE_NAMES as string[]).includes(name);

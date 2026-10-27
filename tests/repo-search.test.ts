@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildQueries, extractTerms, fetchPool, withLanguage, type GitHubClient } from '../RepoRadar/headless/fetch.js';
-import { expansionTopics } from '../RepoRadar/headless/search.js';
+import { expansionTopics, topicCandidates } from '../RepoRadar/headless/search.js';
 import { rankCandidates, type RankCandidate } from '../RepoRadar/headless/rank.js';
 import { PROFILES, PROFILE_NAMES, REFERENCE, downloadMB, estimateSeconds, resolveModels } from '../server/src/models.js';
 
@@ -18,10 +18,12 @@ test('queries keep the words that matter and drop the ones every repository shar
 });
 
 test('the second fetch round searches the topics most shared by the best matches', () => {
-  const r = (sim: number, ...topics: string[]) => ({ sim, topics });
-  const scored = [r(0.9, 'web-scraping', 'python', 'crawler'), r(0.85, 'web-scraping', 'crawler'), r(0.8, 'web-scraping', 'hacktoberfest'), r(0.8, 'crawler', 'python'), r(0.2, 'react', 'react', 'react')];
-  assert.deepEqual(expansionTopics(scored, { count: 5, skip: [] }), ['web-scraping', 'crawler']);
-  assert.deepEqual(expansionTopics(scored, { count: 5, skip: ['crawler'] }), ['web-scraping']);
+  const r = (score: number, ...topics: string[]) => ({ score, topics });
+  const scored = [r(0.9, 'web-scraping', 'python', 'crawler', 'data'), r(0.85, 'web-scraping', 'crawler', 'data'), r(0.8, 'web-scraping', 'hacktoberfest'), r(0.8, 'crawler', 'python'), r(0.2, 'react')];
+  const cands = topicCandidates(scored, ['crawlers']);
+  assert.deepEqual(cands.map((c) => c.topic), ['web-scraping', 'data']); // python is a language, crawler a spelling of crawlers
+  const sim: Record<string, number> = { 'web-scraping': 0.8, data: 0.3 };
+  assert.deepEqual(expansionTopics(cands.map((c) => ({ ...c, sim: sim[c.topic]! })), 5), ['web-scraping']);
 });
 
 test('the pool drops archived repos and forks, removes duplicates and stops at poolSize', async () => {

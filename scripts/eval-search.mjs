@@ -96,7 +96,7 @@ async function evaluate(profile, item) {
     client,
     reference,
     embed: (texts) => cached(`emb-${key(m.embed.id, ...texts)}.bin`, () => enc.embed(spec(m.embed), texts), packVecs, unpackVecs),
-    rerank: (q, docs) => cached(`rr-${key(m.rerank.id, q, ...docs)}.json`, () => enc.rerank(spec(m.rerank), q, docs)),
+    rerank: (q, docs) => cached(`rr-${key(m.rerank.id + (process.env.APPFORGE_RERANK_PREFIX === 'off' ? '' : '|prefix'), q, ...docs)}.json`, () => enc.rerank(spec(m.rerank), q, docs)),
   });
   const names = found.ranked.map((x) => x.candidate.fullName);
   const met = computeMetrics(item, found.ranked.map((x) => ({ fullName: x.candidate.fullName, stars: x.candidate.stars, future: 0.5 })));
@@ -109,7 +109,8 @@ async function evaluate(profile, item) {
     short: poolRecall(item, found.rank.shortlist)?.recall ?? 0,
     top10: all.size ? names.filter((n) => all.has(lc(n))).length / all.size : 0,
     ceil10: best(names), ceil150: best(found.rank.shortlist),
-    results: names.length, poolSize: found.candidates.length, expansion: found.expansion, seconds: (Date.now() - started) / 1000, top: names,
+    deepest: Math.max(...names.map((n) => found.rank.shortlist.indexOf(n))),
+    results: names.length, poolSize: found.candidates.length, queries: found.queries, topics: found.topics, expansion: found.expansion, seconds: (Date.now() - started) / 1000, top: names,
   };
 }
 

@@ -11,7 +11,7 @@ import { prisma } from './prisma-shim';
 import { extractTerms, type GitHubClient } from './fetch';
 import type { RankStats } from './rank';
 import { EXPAND, findRepos } from './search';
-import { embed, rerank, type EncoderSpec } from './encoders';
+import { embed, rerank, warm, type EncoderSpec } from './encoders';
 import { createLogger } from '@/lib/logger';
 import { enrichReposBatch } from '@/lib/github/enrich';
 import { deterministicScore } from '@/lib/scoring/deterministic';
@@ -105,13 +105,16 @@ export async function runAppForgeSearch(id: string, prompt: string, filters: Sea
   try {
     await setJob(id, { status: 'running', stage: 'fetch', progress: 5 });
     process.env.APPFORGE_MODEL_IDLE_MS = String(s.modelIdleMinutes * 60_000);
+    // Both models load (seconds each, the 4B reranker most) while GitHub is searched.
+    void warm(s.embed, 'embed').catch(() => undefined);
+    void warm(s.rerank, 'rerank').catch(() => undefined);
     const found = await findRepos(prompt, filters, { ...s, expandTopics: EXPAND.topics, expandPool: EXPAND.pool }, {
       client: github,
       embed: (texts) => embed(s.embed, texts),
       rerank: (q, docs) => rerank(s.rerank, q, docs),
       // README beginnings help some cross-encoders and hurt others (models.ts): 40 repos per GraphQL call, all at once.
       readmeHeads: !s.rerank.readme ? undefined : (names) => readmeHeads(names),
-      reference: await buildReferenceContext(prompt).catch(() => null),
+      reference: buildReferenceContext(prompt).catch(() => null),
     }, async (stage, run) => {
       const progress = { fetch: 5, embed: 15, expand: 20, rank: 30 }[stage];
       if (progress) await setJob(id, { stage, progress });

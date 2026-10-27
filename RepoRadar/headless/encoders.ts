@@ -154,13 +154,52 @@ function ggufRanker(file: string): Promise<{ model: any; context: any; timer?: N
   return p;
 }
 
+/**
+ * rankAll, but the tokens every input shares (Qwen3-Reranker's ~75-token instruction and the query) are evaluated once
+ * and kept, so each document costs only its own ~30 tokens and the closing ones: 12.6 s instead of 19.3 s for 150 repos
+ * with the 4B on a Radeon RX 6800. The scores are not identical (llama.cpp's ranking lets the shared tokens see the
+ * document): up to 0.06 apart. Uses node-llama-cpp internals; APPFORGE_RERANK_PREFIX=off turns it off.
+ */
+async function rankSharedPrefix(context: any, query: string, docs: string[]): Promise<number[]> {
+  const tok = (t: string) => context.model.tokenize(t, false, 'trimLeadingSpace');
+  const q = tok(query);
+  const inputs: number[][] = docs.map((d) => context._getEvaluationInput(q, tok(d)));
+  let n = inputs[0]!.length;
+  for (const x of inputs) {
+    let i = 0;
+    while (i < n && i < x.length - 1 && x[i] === inputs[0]![i]) i++;
+    n = i;
+  }
+  const seq = context._sequence;
+  await seq.eraseContextTokenRanges([{ start: 0, end: seq.nextTokenIndex }]);
+  await seq.evaluateWithoutGeneratingNewTokens(inputs[0]!.slice(0, n));
+  const out: number[] = [];
+  for (const x of inputs) {
+    await seq.eraseContextTokenRanges([{ start: n, end: seq.nextTokenIndex }]);
+    const rest = x.slice(n);
+    for await (const _ of seq.evaluate(rest, { _noSampling: true })) break;
+    const e = context._llamaContext._ctx.getEmbedding(rest.length, 1);
+    out.push(context._currentArchRankingAlreadyNormalized ? e[0] : 1 / (1 + Math.exp(-e[0])));
+  }
+  return out;
+}
+
 async function ggufRank(file: string, query: string, docs: string[]): Promise<number[]> {
   return serial(async () => {
     const r = await ggufRanker(file);
     clearTimeout(r.timer);
     const cut = (t: string, n: number) => { const tokens = r.model.tokenize(t); return tokens.length <= n ? t : r.model.detokenize(tokens.slice(0, n)); };
     try {
-      return await r.context.rankAll(cut(query, RERANK_QUERY_TOKENS), docs.map((d) => cut(d, RERANK_DOC_TOKENS)));
+      const [q, d] = [cut(query, RERANK_QUERY_TOKENS), docs.map((x) => cut(x, RERANK_DOC_TOKENS))];
+      if (process.env.APPFORGE_RERANK_PREFIX !== 'off' && docs.length > 1) {
+        try {
+          return await rankSharedPrefix(r.context, q, d);
+        } catch (e) {
+          process.stderr.write(`[reranker] shared-prefix ranking failed (${e instanceof Error ? e.message : e}); using rankAll
+`);
+        }
+      }
+      return await r.context.rankAll(q, d);
     } finally {
       r.timer = setTimeout(() => {
         rankers.delete(file);
