@@ -15,6 +15,8 @@ export interface EncoderSpec {
   readme?: boolean;
   /** Cross-encoders run by node-llama-cpp instead (Qwen3-Reranker): the GGUF file, on the GPU when there is one. */
   gguf?: string;
+  /** A GGUF chat LLM trained to answer "Yes" for a relevant document (zerank): its score is that token's logit. */
+  yes?: string;
 }
 
 type Extractor = (texts: string[], o: { pooling: 'mean' | 'cls'; normalize: boolean }) => Promise<{ data: Float32Array; dims: number[] }>;
@@ -184,6 +186,57 @@ async function rankSharedPrefix(context: any, query: string, docs: string[]): Pr
   return out;
 }
 
+/** Chat-LLM rerankers (zerank: system = query, user = document) keep a plain context, loaded once per file. */
+const chatRankers = new Map<string, Promise<{ model: any; context: any; seq: any; timer?: NodeJS.Timeout }>>();
+
+/**
+ * zerank's scoring: sigmoid(logit of "Yes" / 5) where the assistant's answer would start. The system message (the
+ * query) is evaluated once and kept; each document costs its own tokens. A causal model, so the scores are exact.
+ */
+async function yesRank(file: string, yes: string, query: string, docs: string[]): Promise<number[]> {
+  return serial(async () => {
+    let p = chatRankers.get(file);
+    if (!p) {
+      p = llamaRuntime().then(async (engine) => {
+        const model = await engine.loadModel({ modelPath: file });
+        const context = await model.createContext({ contextSize: RERANK_CONTEXT, batchSize: RERANK_CONTEXT });
+        return { model, context, seq: context.getSequence() };
+      });
+      p.catch(() => chatRankers.delete(file));
+      chatRankers.set(file, p);
+    }
+    const r = await p;
+    clearTimeout(r.timer);
+    try {
+      const tok = (t: string) => r.model.tokenize(t, true) as number[];
+      const yesId = r.model.tokenize(yes, false)[0];
+      const prefix = tok(`<|im_start|>system
+${r.model.detokenize(r.model.tokenize(query).slice(0, RERANK_QUERY_TOKENS))}<|im_end|>
+<|im_start|>user
+`);
+      await r.seq.eraseContextTokenRanges([{ start: 0, end: r.seq.nextTokenIndex }]);
+      await r.seq.evaluateWithoutGeneratingNewTokens(prefix);
+      const out: number[] = [];
+      for (const d of docs) {
+        await r.seq.eraseContextTokenRanges([{ start: prefix.length, end: r.seq.nextTokenIndex }]);
+        const body = r.model.detokenize(r.model.tokenize(d).slice(0, RERANK_DOC_TOKENS));
+        const rest = tok(`${body}<|im_end|>
+<|im_start|>assistant
+`);
+        const res = await r.seq.controlledEvaluate([...rest.slice(0, -1), [rest.at(-1), { generateNext: { logits: { filter: { tokens: [yesId] } } } }]]);
+        const logit = res.at(-1)?.next?.logits?.get(yesId) ?? -50;
+        out.push(1 / (1 + Math.exp(-logit / 5)));
+      }
+      return out;
+    } finally {
+      r.timer = setTimeout(() => {
+        chatRankers.delete(file);
+        void r.context.dispose().then(() => r.model.dispose()).catch(() => undefined);
+      }, Number(process.env.APPFORGE_MODEL_IDLE_MS) || 600_000).unref();
+    }
+  });
+}
+
 async function ggufRank(file: string, query: string, docs: string[]): Promise<number[]> {
   return serial(async () => {
     const r = await ggufRanker(file);
@@ -214,6 +267,7 @@ async function ggufRank(file: string, query: string, docs: string[]): Promise<nu
 /** Relevance of each doc to the query: the sigmoid of the cross-encoder's logit, or the GGUF reranker's score. */
 export async function rerank(spec: EncoderSpec, query: string, docs: string[], batchSize = 8): Promise<number[]> {
   if (docs.length === 0) return [];
+  if (spec.gguf && spec.yes) return yesRank(spec.gguf, spec.yes, query, docs);
   if (spec.gguf) return ggufRank(spec.gguf, query, docs);
   const { tok, model } = await crossEncoder(spec);
   const out: number[] = [];

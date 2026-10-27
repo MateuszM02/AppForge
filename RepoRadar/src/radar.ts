@@ -53,7 +53,7 @@ export interface SearchSettings {
   poolSize: number;
   embed: { id: string; pooling?: 'mean' | 'cls' };
   /** readme: whether this cross-encoder reads the start of each README; gguf: its file, for node-llama-cpp. */
-  rerank: { id: string; readme?: boolean; gguf?: string };
+  rerank: { id: string; readme?: boolean; gguf?: string; yes?: string };
   minSimilarity: number;
   rerankPool: number;
   minRerankScore: number;
@@ -97,7 +97,7 @@ export function radar(): Promise<Headless> {
 /** Where a GGUF reranker lives (models/rerank/<file>). */
 export const rerankPath = (m: EncoderModel) => (m.gguf ? path.join(paths.models, 'rerank', m.gguf.file) : undefined);
 
-const spec = (m: EncoderModel) => ({ id: m.id, pooling: m.pooling, readme: m.readme, gguf: rerankPath(m) });
+const spec = (m: EncoderModel) => ({ id: m.id, pooling: m.pooling, readme: m.readme, gguf: rerankPath(m), yes: m.yes });
 
 export function searchSettings(): SearchSettings {
   const c = loadConfig().repos;

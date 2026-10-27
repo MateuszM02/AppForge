@@ -84,7 +84,7 @@ const want = opts.prompts ? opts.prompts.toLowerCase().split(',') : [];
 const items = gold.filter((p) => !want.length || want.some((w) => p.prompt.toLowerCase().includes(w)));
 const r = await radar();
 const lc = (s) => s.toLowerCase();
-const spec = (m) => ({ id: m.id, pooling: m.pooling, readme: m.readme, gguf: rerankPath(m) });
+const spec = (m) => ({ id: m.id, pooling: m.pooling, readme: m.readme, gguf: rerankPath(m), yes: m.yes });
 
 async function evaluate(profile, item) {
   const c = loadConfig().repos;

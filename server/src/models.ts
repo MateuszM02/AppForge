@@ -18,6 +18,8 @@ export interface EncoderModel {
    * and whether its scores are stretched to 0-1 per search first (for a model that squeezes them). */
   weight?: number;
   scale?: 'minmax';
+  /** A chat LLM scored by the logit of this answer token (zerank's "Yes"). */
+  yes?: string;
 }
 
 export const ENCODERS: Record<string, EncoderModel> = {
@@ -36,6 +38,10 @@ export const ENCODERS: Record<string, EncoderModel> = {
   // almost every repo above 0.8, so its scores are stretched to 0-1 per search before the blend.
   'gte-rerank-modernbert': { id: 'Alibaba-NLP/gte-reranker-modernbert-base', kind: 'rerank', mb: 151, readme: false, weight: 1, scale: 'minmax' },
   'qwen3-rerank-0.6b': { id: 'Qwen3-Reranker-0.6B', kind: 'rerank', mb: 639, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf', file: 'Qwen3-Reranker-0.6B.Q8_0.gguf' } },
+  // Under test (Oct 2026), weight 0.35 on the 20 prompts: zerank-2 0.74 with 2,000 candidates (Qwen3-4B 0.70; 11.5 s per
+  // 150 repos on an RX 6800, as the 4B), zerank-1-small 0.69 with 1,000 (Qwen3-0.6B 0.61; 8.9 s).
+  'zerank-1-small': { id: 'zerank-1-small', kind: 'rerank', mb: 1107, readme: false, yes: 'Yes', gguf: { uri: 'hf:keisuke-miyako/zerank-1-small-gguf-q4_k_m/zerank-1-small-Q4_k_m.gguf', file: 'zerank-1-small-Q4_k_m.gguf' } },
+  'zerank-2': { id: 'zerank-2', kind: 'rerank', mb: 2497, readme: false, yes: 'Yes', gguf: { uri: 'hf:keisuke-miyako/zerank-2-gguf-q4_k_m/zerank-2-Q4_k_m.gguf', file: 'zerank-2-Q4_k_m.gguf' } },
   // AppForge 0.1's reranker, listed so `appforge setup models` can remove its files.
   'msmarco-l6': { id: 'Xenova/ms-marco-MiniLM-L-6-v2', kind: 'rerank', mb: 23, readme: true },
   'qwen3-rerank-4b': { id: 'Qwen3-Reranker-4B', kind: 'rerank', mb: 2497, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-4B-GGUF/Qwen3-Reranker-4B.Q4_K_M.gguf', file: 'Qwen3-Reranker-4B.Q4_K_M.gguf' } },
