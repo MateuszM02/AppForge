@@ -41,9 +41,8 @@ The one command above does everything, without administrator rights:
    (if any) is not touched.
 3. Installs the dependencies and builds AppForge.
 4. Downloads the **Camoufox** browser (~300 MB) and the repo-search models. It asks for a profile and shows each
-   one's size, memory needs and estimated search time on your computer: **minimalist** 0.7 GB (no LLM),
-   **small** 1.9 GB, **balanced** 3.5 GB or **best** 5.3 GB
-   (Enter = best; a GPU makes the local LLM much faster). `APPFORGE_MODELS=minimalist|small|balanced|best` answers without
+   one's size, memory needs and estimated search time on your computer: **small** 0.7 GB, **balanced** 0.7 GB or
+   **best** 2.6 GB (Enter = best; a GPU makes the best profile's reranker much faster). `APPFORGE_MODELS=small|balanced|best` answers without
    asking, `APPFORGE_MINIMAL=1` skips the downloads (`appforge setup` later), and `appforge setup models` switches.
 5. Adds the `appforge` command and registers the MCP server in **VS Code** (and VS Code Insiders) and
    **Claude Code**, when they are installed.
@@ -141,12 +140,12 @@ VS Code / Claude Code / any MCP client
     ├── memory/          hippo-memory engine (SQLite + Markdown) + size limit, archive, starter pack
     ├── skill-sources/   catalog of anthropics/skills + anthropics/claude-plugins-official (GitHub, no clone)
     ├── skill-browser/   search / inspect / install skills and plugins for each client
-    ├── RepoRadar/       repo search: GitHub fetch → embedding → cross-encoder → local LLM, on RepoRadar's modules
+    ├── RepoRadar/       repo search: GitHub fetch → embedding → cross-encoder + popularity, on RepoRadar's modules
     └── camofox-browser/ Camoufox REST server, started on demand on 127.0.0.1, stopped when idle
 ```
 
 - **No cloud LLM.** The agent you already use does the thinking; AppForge supplies data and actions. Repo search
-  ranks with small local models (an embedding model, a cross-encoder and a 2-4B LLM) on your computer.
+  ranks with two small local models (an embedding model and a cross-encoder) on your computer.
 - **GitHub without burning quota**: commit checks use `git ls-remote`, file contents come from
   raw.githubusercontent.com, API answers are cached with ETags (a "not modified" answer is free), and file lists
   fall back to the repository tarball when the API limit is reached.
@@ -164,7 +163,7 @@ Windows `%LOCALAPPDATA%\AppForge`, macOS `~/Library/Application Support/AppForge
 | `config.json` | your settings (only what differs from the defaults) |
 | `memory/` | the memory: `INDEX.md`, `FORMAT.md`, `global/`, `projects/<key>/`, `archive/` |
 | `cache/` | GitHub cache, skill catalog, RepoRadar cache and logs |
-| `models/` | the repo-search models of your profile (`models/llm/` holds the LLM) |
+| `models/` | the repo-search models of your profile (`models/llm/` holds the optional LLM) |
 | `browser/` | browser profiles, cookies, downloads |
 | `node/`, `app/` | the private Node.js and the code (when installed with the one-line command) |
 
@@ -191,8 +190,8 @@ setting can also be an environment variable `APPFORGE_<SECTION>_<KEY>` (e.g. `AP
 | `browser.maxSnapshotChars` | 15000 | longest page snapshot returned at once; the rest comes with `browser_snapshot` offset |
 | `repos.waitSeconds` | 40 | how long `repo_search` waits before returning a job id |
 | `repos.modelProfile` | best | `small`, `balanced` or `best` (set by `appforge setup models`) |
-| `repos.llm` | true | let the local LLM make the final pick (false = cross-encoder order, faster) |
-| `repos.llmTimeoutSeconds` | 240 | give up on the LLM pick after this long |
+| `repos.llm` | false | let a local LLM (Qwen3.5-4B, 2.7 GB more) drop off-topic results; 25 s more per search, no measured gain in ranking |
+| `repos.llmTimeoutSeconds` | 240 | give up on the LLM filter after this long |
 | `updateCheck` | true | look for a newer AppForge at start |
 
 Other environment variables: `GITHUB_TOKEN` / `GH_TOKEN` (GitHub access), `APPFORGE_HOME` (data folder),

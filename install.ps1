@@ -11,15 +11,15 @@
 #   2. Puts a private Node.js 24 LTS in %LOCALAPPDATA%\AppForge\node (checked against nodejs.org's SHA-256 list);
 #      your own Node, if any, is not touched.
 #   3. Installs the dependencies and builds AppForge (only when the version changed).
-#   4. Downloads the Camoufox browser (~300 MB) and the repo-search models: asks for a profile, minimalist / small /
-#      balanced / best (about 0.7 / 1.9 / 3.5 / 5.3 GB), showing the estimated search time here; Enter = best.
+#   4. Downloads the Camoufox browser (~300 MB) and the repo-search models: asks for a profile, small / balanced /
+#      best (about 0.7 / 0.7 / 2.6 GB), showing the estimated search time here; Enter = best.
 #   5. Adds the `appforge` command (%USERPROFILE%\.local\bin) and registers AppForge in VS Code and Claude Code.
 #   6. Offers to install the GitHub CLI and log in (needed for repo_search).
 # Safe to re-run to update. uninstall.ps1 removes it all again.
 #
 # Environment variables:
 #   APPFORGE_MINIMAL=1       skip step 4 (downloads happen on first use or with `appforge setup`)
-#   APPFORGE_MODELS=<name>   model profile for step 4 without asking: minimalist, small, balanced or best
+#   APPFORGE_MODELS=<name>   model profile for step 4 without asking: small, balanced or best
 #   APPFORGE_AUTO_INSTALL=1  install the GitHub CLI without asking
 #   APPFORGE_NO_EXTRAS=1     never offer the GitHub CLI
 #   APPFORGE_NO_REGISTER=1   do not change VS Code / Claude Code settings

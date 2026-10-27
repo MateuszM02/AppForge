@@ -83,9 +83,10 @@ export async function rankCandidates<C extends RankCandidate>(need: string, cand
   const ranked = shortlist
     .map((x, i) => ({ candidate: x.c, similarity: x.sim, rerankScore: ce[i] ?? 0 }))
     .filter((r) => r.rerankScore >= s.minRerankScore)
-    // Weights measured on tests/search-gold.json: a cross-encoder alone over-rates small keyword-perfect repos, so
-    // prominence carries half the score (RepoRadar's funnel uses 0.6 / 0.2 / 0.12 / 0.08; this scored 0.53 vs 0.37).
-    .map((r) => ({ ...r, score: 0.35 * r.rerankScore + 0.5 * prominence(r.candidate.stars, small) + 0.1 * credibility(r.candidate.stars, r.candidate.forks, small) + 0.05 * recency(r.candidate.pushedAt, s.pushedWithinDays) }))
+    // Weights fitted on cached Qwen3-Reranker scores of tests/search-gold.json: the reranker alone scored nDCG 0.20,
+    // as it rates small keyword-perfect repos near 1, so prominence carries most of the score (0.15 / 0.5 scored 0.60
+    // with the 4B and 0.56 with the 0.6B, against 0.53 and 0.46 with ms-marco's 0.35 / 0.5).
+    .map((r) => ({ ...r, score: 0.15 * r.rerankScore + 0.5 * prominence(r.candidate.stars, small) + 0.1 * credibility(r.candidate.stars, r.candidate.forks, small) + 0.05 * recency(r.candidate.pushedAt, s.pushedWithinDays) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, s.finalists);
   const stats: RankStats = {

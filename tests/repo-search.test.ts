@@ -55,16 +55,16 @@ test('established projects reach the cross-encoder even when many tiny repos mat
 
 test('profiles: bigger ones download more, settings override them, and the estimate scales with the probe', () => {
   assert.ok(PROFILE_NAMES.every((n, i) => i === 0 || downloadMB(n) > downloadMB(PROFILE_NAMES[i - 1]!)));
-  const r = resolveModels({ modelProfile: 'nope', embedModel: '', rerankModel: 'msmarco-l6', llmModel: 'C:\\m\\mine.gguf', poolSize: 0, rerankPool: 0 });
+  const r = resolveModels({ modelProfile: 'nope', embedModel: '', rerankModel: 'msmarco-l6', llmModel: 'C:\\m\\mine.gguf', llm: true, poolSize: 0, rerankPool: 0 });
   assert.equal(r.profile, 'best');
   assert.equal(r.rerank.id, 'Xenova/ms-marco-MiniLM-L-6-v2');
   assert.equal(r.llm!.file, 'mine.gguf');
-  assert.equal(resolveModels({ ...r, modelProfile: 'minimalist', embedModel: '', rerankModel: '', llmModel: '' }).llm, null);
+  assert.equal(resolveModels({ modelProfile: 'small', embedModel: '', rerankModel: '', llmModel: '', llm: false, poolSize: 0, rerankPool: 0 }).llm, null);
   assert.equal(r.poolSize, PROFILES.best.poolSize);
   const saved = { probe: REFERENCE.probeMs, timings: PROFILES.small.timings };
   REFERENCE.probeMs = 100;
-  PROFILES.small.timings = { github: 10, encoders: 4, llmGpu: 6, llmCpu: 40 };
-  const slow = estimateSeconds('small', { probeMs: 200, gpu: false })!; // 10 + 8 + 80 s
+  PROFILES.small.timings = { github: 10, encGpu: 6, encCpu: 44 };
+  const slow = estimateSeconds('small', { probeMs: 200, gpu: false })!; // 10 + 88 s
   assert.ok(slow.low <= 98 && slow.high >= 98);
   Object.assign(REFERENCE, { probeMs: saved.probe });
   PROFILES.small.timings = saved.timings;

@@ -13,9 +13,9 @@ Usage: appforge <command>
   doctor                      check what works and what is missing
   register [clients]          add AppForge to vscode, claude or all (default all)
   unregister [clients]        remove it again
-  setup [browser|models|all] [minimalist|small|balanced|best]
+  setup [browser|models|all] [small|balanced|best]
                               download the Camoufox browser (~300 MB) and the repo-search models
-                              (a profile: about 0.7 / 1.9 / 3.5 / 5.3 GB; asks which when run in a terminal)
+                              (a profile: about 0.7 / 0.7 / 2.6 GB; asks which when run in a terminal)
   memory stats|list|consolidate|reset [--empty]|path
   skills sync [--force] | skills list
   config list | config get <key> | config set <key> <value> | config path
@@ -152,14 +152,14 @@ async function chooseProfile(arg?: string): Promise<import('./models.js').Profil
   const m = await import('./models.js');
   const given = arg ?? process.env.APPFORGE_MODELS;
   if (given) {
-    if (!m.isProfile(given)) throw new Error(`Unknown model profile "${given}": use minimalist, small, balanced or best.`);
+    if (!m.isProfile(given)) throw new Error(`Unknown model profile "${given}": use small, balanced or best.`);
     return given;
   }
   const current = loadConfig().repos.modelProfile;
   if (!process.stdin.isTTY) return m.isProfile(current) ? current : 'best';
   const gpu = await detectGpu();
   const probe = m.probeMs();
-  console.log(`\nrepo_search ranks results with up to three local models. Choose a profile (${m.cpuSummary()}, ${gpu ? `GPU: ${gpu}` : 'no GPU found, so the models run on the CPU'}):\n`);
+  console.log(`\nrepo_search ranks results with two local models. Choose a profile (${m.cpuSummary()}, ${gpu ? `GPU: ${gpu}` : 'no GPU found, so the models run on the CPU'}):\n`);
   console.log('  profile      download   RAM / GPU memory***   time per search*   quality**   models');
   for (const name of m.PROFILE_NAMES) {
     const p = m.PROFILES[name];
@@ -167,17 +167,17 @@ async function chooseProfile(arg?: string): Promise<import('./models.js').Profil
     const time = est ? `${est.low}-${est.high} s` : 'not measured';
     const quality = p.quality != null ? p.quality.toFixed(2) : '-';
     const hw = `${p.hardware.ramGB} / ${p.hardware.vramGB} GB`;
-    const models = [m.ENCODERS[p.embed]!.id, m.ENCODERS[p.rerank]!.gguf?.file ?? m.ENCODERS[p.rerank]!.id, p.llm ? m.LLMS[p.llm]!.file : 'no LLM'].map((x) => x.split('/').pop()!.replace(/-Q4_K_M\.gguf$/, '')).join(', ');
+    const models = [m.ENCODERS[p.embed]!.id, m.ENCODERS[p.rerank]!.gguf?.file ?? m.ENCODERS[p.rerank]!.id].map((x) => x.split('/').pop()!.replace(/\.Q\w+\.gguf$/, '')).join(', ');
     console.log(`  ${name.padEnd(11)}  ${`${(m.downloadMB(name) / 1000).toFixed(1)} GB`.padStart(8)}   ${hw.padStart(19)}   ${time.padStart(16)}   ${quality.padStart(9)}   ${models}`);
   }
   console.log(`\n  * estimated for this computer from measurements on a ${m.REFERENCE.machine}`);
   console.log('  ** nDCG@10 on the AppForge search test set (0-1, higher is better)');
   console.log('  *** free RAM it needs, and the GPU memory that holds all its models (less works, more slowly; no GPU works too)\n');
   for (;;) {
-    const a = await ask('Profile [minimalist/small/balanced/best] (Enter = best): ');
+    const a = await ask('Profile [small/balanced/best] (Enter = best): ');
     if (!a) return 'best';
     if (m.isProfile(a)) return a;
-    console.log('Please type minimalist, small, balanced or best.');
+    console.log('Please type small, balanced or best.');
   }
 }
 
@@ -192,9 +192,9 @@ async function offerCleanup(profile: import('./models.js').ProfileName): Promise
     const dir = e.gguf ? path.join(paths.models, 'rerank', e.gguf.file) : path.join(paths.models, ...e.id.split('/'));
     if (key !== keep.embed && key !== keep.rerank && fs.existsSync(dir)) unused.push(dir);
   }
-  for (const [key, l] of Object.entries(m.LLMS)) {
+  for (const l of Object.values(m.LLMS)) {
     const file = path.join(paths.models, 'llm', l.file);
-    if (key !== keep.llm && fs.existsSync(file)) unused.push(file);
+    if (!loadConfig().repos.llm && fs.existsSync(file)) unused.push(file); // the optional LLM filter is off
   }
   if (!unused.length) return;
   const size = (p: string): number => {

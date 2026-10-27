@@ -11,10 +11,11 @@ pipeline ([headless/pipeline.ts](headless/pipeline.ts)) that reuses upstream's m
    word→docx, "X to Y" phrases), GitHub topics close to the need, and paged GraphQL search: 500-2,000 candidates.
 2. **Embed** ([headless/rank.ts](headless/rank.ts)): a small embedding model drops repos below a fixed similarity and
    keeps the K most promising, a third of them the most-starred, so established projects are not crowded out.
-3. **Rerank**: a cross-encoder reads the need with each of the K and keeps the 15 best (blended with popularity).
-4. **Pick**: upstream's evidence (releases, issues, contributors) and health score, then upstream's listwise prompt
-   on a local LLM ([headless/openai-local.ts](headless/openai-local.ts), node-llama-cpp) that orders the 15 and drops
-   off-topic ones. Nothing is sent anywhere; without the model, results stay in cross-encoder order.
+3. **Rerank**: a cross-encoder reads the need with each of the K; the 10 best by 0.15 × its score + 0.5 × popularity
+   (log stars) + credibility and recency are the results.
+4. **Evidence**: upstream's releases, issues, contributors and health score for the 10. Optionally (`repos.llm`) a
+   local LLM ([headless/openai-local.ts](headless/openai-local.ts), node-llama-cpp) reads upstream's listwise prompt
+   and drops off-topic ones; the order stays. Nothing is sent anywhere.
 
 The bundler ([../scripts/build-reporadar.mjs](../scripts/build-reporadar.mjs)) rewrites imports so upstream stays
 untouched: `@prisma/client` → [headless/prisma-shim.ts](headless/prisma-shim.ts) (SQLite), `openai` → the local
@@ -22,16 +23,18 @@ LLM, upstream log lines → stderr.
 
 ## Model profiles
 
-`appforge setup models [minimalist|small|balanced|best]` (also asked by the installer, Enter = best) picks the models.
+`appforge setup models [small|balanced|best]` (also asked by the installer, Enter = best) picks the models.
 RAM is the free memory a profile needs; GPU memory holds all its models and their fixed context windows on the GPU
 (less works, the layers that do not fit run on the CPU; no GPU works too, slower):
 
-| Profile | Download | RAM / GPU memory | Embedding | Cross-encoder | LLM | Pool / K |
+| Profile | Download | RAM / GPU memory | Embedding | Cross-encoder | Pool / K | nDCG@10* |
 |---|---|---|---|---|---|---|
-| minimalist | 0.7 GB | 4 / 2 GB | all-MiniLM-L6-v2 | Qwen3-Reranker-0.6B | none (cross-encoder order) | 500 / 150 |
-| small | 1.9 GB | 6 / 4 GB | all-MiniLM-L6-v2 | Qwen3-Reranker-0.6B | Qwen3.5-2B | 500 / 150 |
-| balanced | 3.5 GB | 8 / 6 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-0.6B | Qwen3.5-4B | 1,000 / 150 |
-| best | 5.3 GB | 12 / 8 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-4B | Qwen3.5-4B | 2,000 / 150 |
+| small | 0.7 GB | 4 / 2 GB | all-MiniLM-L6-v2 | Qwen3-Reranker-0.6B | 500 / 150 | 0.52 |
+| balanced | 0.7 GB | 4 / 2 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-0.6B | 1,000 / 150 | 0.56 |
+| best | 2.6 GB | 6 / 4 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-4B | 2,000 / 150 | 0.60 |
+
+* on cached candidate pools of the 10 test prompts; AppForge 0.1's models (MiniLM + ms-marco-MiniLM-L-6) scored
+0.37 on the same pools, and 0.27 end to end with 0.1's own fetch.
 
 Chosen with `node scripts/eval-search.mjs` (tests/search-gold.json) and fixed candidate pools of its 10 prompts:
 
@@ -42,9 +45,11 @@ Chosen with `node scripts/eval-search.mjs` (tests/search-gold.json) and fixed ca
 - Reranker: Qwen3-Reranker raises the best reachable nDCG@10 of its top 10 from 0.55 (mxbai-rerank-base-v1) to 0.61
   (0.6B, +1 s per search) and 0.67 (4B, +15 s); it needs a strong popularity weight in the blend.
 - Pool: 500 candidates already hold 96% of the must-have answers; more mostly adds alternatives.
-- LLM: Qwen3.5 2B/4B; on the same 10 finalists Claude Haiku and Sonnet ranked only 0.04-0.06 better.
+- LLM: none by default. Ordering the top 10, Qwen3.5-2B and -4B scored lower than the blend (0.48 and 0.57 against
+  0.52 and 0.60); as a filter they changed it by at most 0.01 for 22-34 s per search. Claude Haiku and Sonnet ordered
+  earlier finalists only 0.04-0.06 better than Qwen3.5-4B.
 
-The LLM and the Qwen3 rerankers run on the GPU when there is one (Vulkan, CUDA or Metal), the embedders on DirectML or
+The Qwen3 rerankers (and the optional LLM) run on the GPU when there is one (Vulkan, CUDA or Metal), the embedders on DirectML or
 CUDA when available, else everything runs on the CPU.
 
 ## Tools

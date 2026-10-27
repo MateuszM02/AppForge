@@ -55,10 +55,10 @@ function formatSearch(s: RadarSearch): string {
 export function formatStats(st: RadarStats): string {
   const r = st.rank;
   const llm = {
-    used: `the local LLM picked the final list${st.llmDropped ? ` and dropped ${st.llmDropped} as off-topic` : ''}`,
-    off: 'the LLM pick is off (the minimalist profile, or repos.llm), so this is the cross-encoder order',
-    unavailable: 'the local LLM is not available (run `appforge setup models`), so this is the cross-encoder order',
-    failed: 'the local LLM did not answer in time, so this is the cross-encoder order',
+    used: `the local LLM checked the list${st.llmDropped ? ` and dropped ${st.llmDropped} as off-topic` : ' and dropped none'}`,
+    off: 'ranked by the cross-encoder and popularity',
+    unavailable: 'the local LLM filter (repos.llm) is on but its model is missing (run `appforge setup models`)',
+    failed: 'the local LLM filter did not answer in time, so nothing was dropped',
   }[st.llm];
   const stages = r
     ? `${st.pool} candidates from ${st.queries.length} GitHub searches; ` +
@@ -129,8 +129,8 @@ export function registerRepoTools(ctx: ForgeContext): void {
       description:
         'Find GitHub repositories by what they should do, not by name ("self-hosted markdown wiki with git sync", ' +
         '"alternative to Firebase Auth for Next.js"). Searches GitHub several ways plus awesome-lists and package registries, ' +
-        'then narrows a pool of up to a few thousand repositories with local models (an embedding model, a cross-encoder and a ' +
-        'small LLM, all on this computer) and flags risks from evidence (releases, issues, contributors). Takes 1-3 ' +
+        'then narrows a pool of up to a few thousand repositories with local models (an embedding model and a cross-encoder, ' +
+        'both on this computer) and flags risks from evidence (releases, issues, contributors). Takes 0.5-1.5 ' +
         'minutes; if it is not done in time you get an id for repo_search_result. Use before building something new.',
       inputSchema: {
         need: z.string().min(3).describe('What the project should do, in plain words.'),

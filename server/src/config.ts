@@ -68,7 +68,7 @@ export const DEFAULTS = {
   repos: {
     /** repo_search waits this long for results, then returns a job id to poll with repo_search_result. */
     waitSeconds: 40,
-    /** Which local models rank results: minimalist, small, balanced or best (see `appforge setup models`). */
+    /** Which local models rank results: small, balanced or best (see `appforge setup models`). */
     modelProfile: 'best',
     /** Override the profile's models: a key from server/src/models.ts, a Hugging Face id, or (LLM) a GGUF path. */
     embedModel: '',
@@ -82,9 +82,10 @@ export const DEFAULTS = {
     minRerankScore: 0,
     /** How many repos reach the final pick. */
     finalists: 10,
-    /** Let the local LLM make the final pick (off = cross-encoder order). */
-    llm: true,
-    /** Give up on the LLM pick after this long and keep the cross-encoder order (CPU-only machines are slow). */
+    /** Let a local LLM (Qwen3.5-4B, 2.7 GB) drop off-topic results. Off by default: it adds 25 s per search and did not
+     * raise the measured ranking quality. */
+    llm: false,
+    /** Give up on the LLM filter after this long and drop nothing (CPU-only machines are slow). */
     llmTimeoutSeconds: 240,
     /** Unload the LLM after this many idle minutes to free its memory. */
     llmIdleMinutes: 10,

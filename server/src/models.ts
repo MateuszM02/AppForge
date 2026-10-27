@@ -31,12 +31,10 @@ export const ENCODERS: Record<string, EncoderModel> = {
   'qwen3-rerank-4b': { id: 'Qwen3-Reranker-4B', kind: 'rerank', mb: 2497, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-4B-GGUF/Qwen3-Reranker-4B.Q4_K_M.gguf', file: 'Qwen3-Reranker-4B.Q4_K_M.gguf' } },
 };
 
-/** Local LLMs for the final pick, Q4_K_M GGUF, stored in models/llm under their file name. Also tried (labelled listwise
- * request, Radeon RX 6800): granite-4.0-h-tiny and granite-4.0-h-micro kept traps; Ministral-3-3B was right and quick on a
- * short request but in real searches (longer README excerpts) took 55 s per pick against Qwen3.5-4B's 41 s and ranked
- * worse; MiniCPM5-2B (Sept 2026) likewise: 5.7 s on the short request, but 25-33 s per pick in real searches against
- * Qwen3.5-2B's 13-16 s, at the same nDCG (its template's thought block also eats the answer's first characters); Qwen3-1.7B
- * read the prompt at half Qwen3.5's speed. */
+/** The optional LLM filter (repos.llm, off by default), Q4_K_M GGUF in models/llm. As the final pick, Qwen3.5-2B and -4B
+ * ordered the top 10 worse than the reranker and popularity blend (0.48 and 0.57 against 0.52 and 0.60 on cached pools of
+ * the test set) and as a filter changed it by at most 0.01, for 22-34 s per search, so no profile uses one. Also tried:
+ * granite-4.0-h-tiny/micro (kept traps), Ministral-3-3B and MiniCPM5-2B (slower, no better), Qwen3-1.7B (slow prompt). */
 export interface LlmModel {
   uri: string;
   file: string;
@@ -44,25 +42,26 @@ export interface LlmModel {
 }
 
 export const LLMS: Record<string, LlmModel> = {
-  'qwen3.5-2b': { uri: 'hf:unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q4_K_M.gguf', file: 'Qwen3.5-2B-Q4_K_M.gguf', mb: 1281 },
   'qwen3.5-4b': { uri: 'hf:unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_K_M.gguf', file: 'Qwen3.5-4B-Q4_K_M.gguf', mb: 2741 },
+  // The small profile's LLM in 0.2, listed so `appforge setup models` can remove it.
+  'qwen3.5-2b': { uri: 'hf:unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q4_K_M.gguf', file: 'Qwen3.5-2B-Q4_K_M.gguf', mb: 1281 },
 };
+const DEFAULT_LLM = 'qwen3.5-4b';
 
-export type ProfileName = 'minimalist' | 'small' | 'balanced' | 'best';
-export const PROFILE_NAMES: ProfileName[] = ['minimalist', 'small', 'balanced', 'best'];
+export type ProfileName = 'small' | 'balanced' | 'best';
+export const PROFILE_NAMES: ProfileName[] = ['small', 'balanced', 'best'];
 
-/** Seconds per search on the reference machine, split by what they depend on: GitHub, the encoders (CPU), the LLM. */
+/** Seconds per search on the reference machine: GitHub (fetch and evidence), and the encoders (embedding + reranker)
+ * with a GPU and without one. The CPU-only encoder times of the Qwen3 rerankers are estimates, not measurements. */
 export interface Timings {
   github: number;
-  encoders: number;
-  llmGpu: number;
-  llmCpu: number;
+  encGpu: number;
+  encCpu: number;
 }
 
-/** What a profile needs: free RAM to run on the CPU alone, and the video memory that holds all its models and their
+/** What a profile needs: free RAM to run on the CPU alone, and the video memory that holds its models and their
  * (fixed) context windows at once, so that each runs on the GPU. Less video memory still works: node-llama-cpp keeps
- * the layers that do not fit on the CPU, and the search gets slower. Estimated from the files and context sizes; the
- * best profile peaked at 6.9 GB of RAM (model files mapped into memory included) on the reference machine. */
+ * the layers that do not fit on the CPU, and the search gets slower. Estimated from the files and context sizes. */
 export interface Hardware {
   ramGB: number;
   vramGB: number;
@@ -71,48 +70,43 @@ export interface Hardware {
 export interface Profile {
   embed: string;
   rerank: string;
-  /** null: no LLM pick, the results stay in the cross-encoder's order. */
-  llm: string | null;
   /** Candidates fetched (about 500 already hold almost every must-have answer of the test set) and how many of them
-   * the cross-encoder reads: 150 ranked as well as 300 on the test set, in half the time. */
+   * the cross-encoder reads: the best top 10 drew on positions up to 140, so 150. */
   poolSize: number;
   rerankPool: number;
-  /** nDCG@10 on the 10 prompts of tests/search-gold.json (null: not yet measured with these models), and the seconds per
-   * search, built from measured parts: GitHub, encoders (embedding + reranker), LLM pick with 10 finalists. */
+  /** nDCG@10 on the 10 prompts of tests/search-gold.json, on cached candidate pools (live searches measured about 0.04
+   * lower), and the seconds per search. */
   quality: number | null;
   timings: Timings | null;
   hardware: Hardware;
 }
 
 export const PROFILES: Record<ProfileName, Profile> = {
-  minimalist: { embed: 'minilm', rerank: 'qwen3-rerank-0.6b', llm: null, poolSize: 500, rerankPool: 150, quality: null, timings: { github: 13, encoders: 10.5, llmGpu: 0, llmCpu: 0 }, hardware: { ramGB: 4, vramGB: 2 } },
-  small: { embed: 'minilm', rerank: 'qwen3-rerank-0.6b', llm: 'qwen3.5-2b', poolSize: 500, rerankPool: 150, quality: null, timings: { github: 13, encoders: 10.5, llmGpu: 17, llmCpu: 61 }, hardware: { ramGB: 6, vramGB: 4 } },
-  balanced: { embed: 'granite-small', rerank: 'qwen3-rerank-0.6b', llm: 'qwen3.5-4b', poolSize: 1000, rerankPool: 150, quality: null, timings: { github: 19, encoders: 14.5, llmGpu: 25, llmCpu: 260 }, hardware: { ramGB: 8, vramGB: 6 } },
-  best: { embed: 'granite-small', rerank: 'qwen3-rerank-4b', llm: 'qwen3.5-4b', poolSize: 2000, rerankPool: 150, quality: 0.49, timings: { github: 20, encoders: 29, llmGpu: 25, llmCpu: 260 }, hardware: { ramGB: 12, vramGB: 8 } },
+  small: { embed: 'minilm', rerank: 'qwen3-rerank-0.6b', poolSize: 500, rerankPool: 150, quality: 0.52, timings: { github: 13, encGpu: 6, encCpu: 30 }, hardware: { ramGB: 4, vramGB: 2 } },
+  balanced: { embed: 'granite-small', rerank: 'qwen3-rerank-0.6b', poolSize: 1000, rerankPool: 150, quality: 0.56, timings: { github: 19, encGpu: 7.5, encCpu: 35 }, hardware: { ramGB: 4, vramGB: 2 } },
+  best: { embed: 'granite-small', rerank: 'qwen3-rerank-4b', poolSize: 2000, rerankPool: 150, quality: 0.6, timings: { github: 28, encGpu: 24.5, encCpu: 150 }, hardware: { ramGB: 6, vramGB: 4 } },
 };
 
 export const isProfile = (name: string): name is ProfileName => (PROFILE_NAMES as string[]).includes(name);
 
-/** The models and sizes of the configured profile; non-empty settings win (a model key, a Hugging Face id, a GGUF). */
-export function resolveModels(r: { modelProfile: string; embedModel: string; rerankModel: string; llmModel: string; poolSize: number; rerankPool: number }) {
+/** The models and sizes of the configured profile; non-empty settings win (a model key, a Hugging Face id, a GGUF). The
+ * LLM is there only when repos.llm is on. */
+export function resolveModels(r: { modelProfile: string; embedModel: string; rerankModel: string; llmModel: string; llm: boolean; poolSize: number; rerankPool: number }) {
   const profile: ProfileName = isProfile(r.modelProfile) ? r.modelProfile : 'best';
   const p = PROFILES[profile];
   const encoder = (key: string, kind: 'embed' | 'rerank'): EncoderModel => ENCODERS[key] ?? { id: key, kind, mb: 0, pooling: 'mean', readme: true };
-  const llmKey = r.llmModel || p.llm;
+  const llmKey = r.llmModel || DEFAULT_LLM;
   return {
     profile,
     embed: encoder(r.embedModel || p.embed, 'embed'),
     rerank: encoder(r.rerankModel || p.rerank, 'rerank'),
-    llm: !llmKey ? null : (LLMS[llmKey] ?? { uri: llmKey, file: llmKey.split(/[\\/]/).pop()!, mb: 0 }),
+    llm: !r.llm ? null : (LLMS[llmKey] ?? { uri: llmKey, file: llmKey.split(/[\\/]/).pop()!, mb: 0 }),
     poolSize: r.poolSize > 0 ? r.poolSize : p.poolSize,
     rerankPool: r.rerankPool > 0 ? r.rerankPool : p.rerankPool,
   };
 }
 
-export const downloadMB = (name: ProfileName) => {
-  const p = PROFILES[name];
-  return ENCODERS[p.embed]!.mb + ENCODERS[p.rerank]!.mb + (p.llm ? LLMS[p.llm]!.mb : 0);
-};
+export const downloadMB = (name: ProfileName) => ENCODERS[PROFILES[name].embed]!.mb + ENCODERS[PROFILES[name].rerank]!.mb;
 
 /** The reference machine of the timings, and its result on probeMs(). */
 export const REFERENCE = { probeMs: 35, machine: 'Ryzen 9 5950X with a Radeon RX 6800 (Vulkan)' };
@@ -131,13 +125,13 @@ export function probeMs(): number {
   return best + (c[0]! > 1e12 ? 1 : 0);
 }
 
-/** Estimated seconds per search here: GitHub time as measured, CPU-bound parts scaled by the probe, the LLM on a GPU
- * as measured on the reference GPU. */
+/** Estimated seconds per search here: GitHub time as measured, the encoders as on the reference GPU, or without a GPU
+ * scaled by the CPU probe. */
 export function estimateSeconds(name: ProfileName, here: { probeMs: number; gpu: boolean }): { low: number; high: number } | null {
   const t = PROFILES[name].timings;
   if (!t || !REFERENCE.probeMs) return null;
   const ratio = Math.max(0.25, here.probeMs / REFERENCE.probeMs);
-  const est = t.github + t.encoders * ratio + (here.gpu ? t.llmGpu : t.llmCpu * ratio);
+  const est = t.github + (here.gpu ? t.encGpu : t.encCpu * ratio);
   return { low: Math.max(1, Math.round(est * 0.75)), high: Math.round(est * 1.5) };
 }
 

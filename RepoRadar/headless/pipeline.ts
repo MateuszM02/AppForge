@@ -173,9 +173,12 @@ export async function runAppForgeSearch(id: string, prompt: string, filters: Sea
         process.env.LISTWISE_TIMEOUT_MS = String(s.llmTimeoutSeconds * 1000);
         const listwise = await timed('pick', () => rankReposListwise(intent, evidences, baselines).catch(() => null));
         if (listwise) {
-          const picked = applyListwiseRanking({ evidences, baselines, listwise });
-          ordered = picked.filter((p) => p.analysis.relevant !== false);
-          st.llmDropped = picked.length - ordered.length;
+          // A filter only: reordered by a 2-4B model the list scored lower than in the blend's order (0.57 vs 0.60),
+          // so the LLM drops what it calls off-topic and adds its one-line reasons, and the order stays.
+          const verdicts = new Map(applyListwiseRanking({ evidences, baselines, listwise }).map((p) => [p.evidence.candidate.fullName, p]));
+          const kept = ordered.map((o) => verdicts.get(o.evidence.candidate.fullName) ?? o).filter((p) => p.analysis.relevant !== false);
+          st.llmDropped = ordered.length - kept.length;
+          ordered = kept;
           st.llm = 'used';
         } else st.llm = 'failed';
       }

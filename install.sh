@@ -12,13 +12,13 @@
 #      (macOS: ~/Library/Application Support/AppForge/app).
 #   2. Puts a private Node.js 24 LTS next to it (checked against nodejs.org's SHA-256 list); your own Node is not touched.
 #   3. Installs the dependencies and builds AppForge (only when the version changed).
-#   4. Downloads the Camoufox browser (~300 MB) and the repo-search models: asks for a profile, minimalist / small /
-#      balanced / best (about 0.7 / 1.9 / 3.5 / 5.3 GB), showing the estimated search time here; Enter = best.
+#   4. Downloads the Camoufox browser (~300 MB) and the repo-search models: asks for a profile, small / balanced /
+#      best (about 0.7 / 0.7 / 2.6 GB), showing the estimated search time here; Enter = best.
 #   5. Adds the `appforge` command (~/.local/bin) and registers AppForge in VS Code and Claude Code.
 #   6. Offers to log in to GitHub with the GitHub CLI if it is installed (needed for repo_search).
 # Safe to re-run to update. uninstall.sh removes it all again.
 #
-# Environment variables: APPFORGE_MINIMAL=1, APPFORGE_MODELS=minimalist|small|balanced|best, APPFORGE_AUTO_INSTALL=1,
+# Environment variables: APPFORGE_MINIMAL=1, APPFORGE_MODELS=small|balanced|best, APPFORGE_AUTO_INSTALL=1,
 # APPFORGE_NO_EXTRAS=1, APPFORGE_NO_REGISTER=1, APPFORGE_DIR, APPFORGE_REF (same meaning as in install.ps1).
 
 set -eu
