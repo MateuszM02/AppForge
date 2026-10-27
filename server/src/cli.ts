@@ -15,7 +15,7 @@ Usage: appforge <command>
   unregister [clients]        remove it again
   setup [browser|models|all] [small|balanced|best]
                               download the Camoufox browser (~300 MB) and the repo-search models
-                              (a profile: about 0.7 / 0.7 / 2.6 GB; asks which when run in a terminal)
+                              (a profile: about 0.2 / 0.7 / 2.6 GB; asks which when run in a terminal)
   memory stats|list|consolidate|reset [--empty]|path
   skills sync [--force] | skills list
   config list | config get <key> | config set <key> <value> | config path

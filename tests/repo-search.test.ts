@@ -68,7 +68,9 @@ test('established projects reach the cross-encoder even when many tiny repos mat
 
 test('profiles: bigger ones download more, settings override them, and the estimate scales with the probe', () => {
   assert.ok(PROFILE_NAMES.every((n, i) => i === 0 || downloadMB(n) > downloadMB(PROFILE_NAMES[i - 1]!)));
-  const r = resolveModels({ modelProfile: 'nope', embedModel: '', rerankModel: 'msmarco-l6', poolSize: 0, rerankPool: 0 });
+  const r = resolveModels({ modelProfile: 'nope', embedModel: '', rerankModel: 'msmarco-l6', rerankWeight: 0, poolSize: 0, rerankPool: 0 });
+  assert.equal(r.rerankWeight, 0.15);
+  assert.equal(resolveModels({ ...r, modelProfile: 'small', rerankModel: '', embedModel: '', rerankWeight: 0 }).rerankWeight, 1);
   assert.equal(r.profile, 'best');
   assert.equal(r.rerank.id, 'Xenova/ms-marco-MiniLM-L-6-v2');
   assert.equal(r.poolSize, PROFILES.best.poolSize);

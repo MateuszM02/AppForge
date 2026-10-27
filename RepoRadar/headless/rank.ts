@@ -20,6 +20,8 @@ export interface RankSettings {
   minRerankScore: number;
   /** The cross-encoder's share of the final score (the rest is popularity, credibility and recency). */
   rerankWeight: number;
+  /** minmax: stretch this search's reranker scores to 0-1 before the blend, for a model that squeezes them (gte). */
+  rerankScale?: 'minmax';
   finalists: number;
   /** The user asked for small / little-known projects: no popularity prior. */
   includeSmallProjects?: boolean;
@@ -86,13 +88,15 @@ export async function rankCandidates<C extends RankCandidate>(need: string, cand
     return head ? `${repoText(x.c)}. ${head.slice(0, 500)}` : repoText(x.c);
   });
   const ce = await deps.rerank(need, docs);
+  const [lo, hi] = [Math.min(...ce), Math.max(...ce)];
+  const scaled = (x: number) => (s.rerankScale === 'minmax' && hi > lo ? (x - lo) / (hi - lo) : x);
   const ranked = shortlist
     .map((x, i) => ({ candidate: x.c, similarity: x.sim, rerankScore: ce[i] ?? 0 }))
     .filter((r) => r.rerankScore >= s.minRerankScore)
     // Weights fitted on cached Qwen3-Reranker scores of tests/search-gold.json: the reranker alone scored nDCG 0.20,
     // as it rates small keyword-perfect repos near 1, so prominence carries most of the score (0.15 / 0.5 scored 0.60
     // with the 4B and 0.56 with the 0.6B, against 0.53 and 0.46 with ms-marco's 0.35 / 0.5).
-    .map((r) => ({ ...r, score: s.rerankWeight * r.rerankScore + 0.5 * prominence(r.candidate.stars, small) + 0.1 * credibility(r.candidate.stars, r.candidate.forks, small) + 0.05 * recency(r.candidate.pushedAt, s.pushedWithinDays) }))
+    .map((r) => ({ ...r, score: s.rerankWeight * scaled(r.rerankScore) + 0.5 * prominence(r.candidate.stars, small) + 0.1 * credibility(r.candidate.stars, r.candidate.forks, small) + 0.05 * recency(r.candidate.pushedAt, s.pushedWithinDays) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, s.finalists);
   const stats: RankStats = {

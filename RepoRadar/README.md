@@ -33,12 +33,13 @@ RAM is the free memory a profile needs; GPU memory holds all its models and thei
 
 | Profile | Download | RAM / GPU memory | Embedding | Cross-encoder | Pool / K | nDCG@10* |
 |---|---|---|---|---|---|---|
-| small | 0.7 GB | 4 / 2 GB | all-MiniLM-L6-v2 | Qwen3-Reranker-0.6B | 500 / 150 | 0.61 |
+| small | 0.2 GB | 2 / 1 GB | all-MiniLM-L6-v2 | gte-reranker-modernbert-base | 500 / 150 | 0.58 |
 | balanced | 0.7 GB | 4 / 2 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-0.6B | 1,000 / 150 | 0.61 |
 | best | 2.6 GB | 6 / 4 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-4B | 2,000 / 150 | 0.70 |
 
 * on the 20 prompts of tests/search-gold.json (apps, self-hosted tools, "alternative to X", libraries in several
-languages, CLIs, ML, devops): worst prompt 0.32 / 0.00 / 0.00, standard deviation 0.19 / 0.22 / 0.22; about 30 / 30 /
+languages, CLIs, ML, devops). Of their top 10, Qwen3-Reranker-4B judges 72% / 60% / 72% on-topic and 8% / 7% / 0%
+off-topic; nDCG differences below about 0.07 are within the noise of 20 prompts; about 30 / 30 /
 45 s per search on a Radeon RX 6800, of which about 22 s is GitHub. On the first 10 of them,
 AppForge 0.1 scored 0.27 end to end, and its models (MiniLM + ms-marco-MiniLM-L-6) 0.37 with this fetch.
 
@@ -48,8 +49,11 @@ Chosen with `node scripts/eval-search.mjs` (tests/search-gold.json) and fixed ca
   against MiniLM's 93%, and far more evenly (worst prompt 0.83 vs 0.67) for about 4 s more per search. bge-small/base,
   arctic-embed-s and gte-modernbert were no better; the 0.5-0.7B embedders (Qwen3-Embedding, Harrier, EmbeddingGemma 2,
   Nomic v2) were not kept, as they embed all 2,000 candidates per search at several times the cost.
-- Reranker: Qwen3-Reranker raises the best reachable nDCG@10 of its top 10 from 0.55 (mxbai-rerank-base-v1) to 0.61
-  (0.6B, +1 s per search) and 0.67 (4B, +15 s); it needs a strong popularity weight in the blend.
+- Reranker: Qwen3-Reranker-4B is the only clear step (0.70 vs 0.61 for the 0.6B, better on 14 of 18 prompts). The
+  small profile's gte-reranker-modernbert-base (150M) ties the 0.6B on nDCG, has the most on-topic top 10 of the small
+  setups (72% vs 63%) and takes 3.8 s per 150 repos on a CPU, where the 0.6B needs 13-26 s. With its raw scores it
+  scored a higher nDCG (0.64) but let a quarter unrelated famous repos in, which the sparse labels did not show; its
+  scores are stretched to 0-1 per search instead. bge-reranker-v2-m3 (0.58) and mxbai-rerank-xsmall-v1 (0.57) lost.
 - Pool: 500 candidates already hold 96% of the must-have answers; more mostly adds alternatives.
 - Floor: the embedding cannot tell junk from answers (Granite rates every shortlisted repo 0.75-0.87, and they
   overlap), the reranker can: below 0.01 sat about 800 shortlisted repos and no expected one.

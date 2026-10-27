@@ -14,6 +14,10 @@ export interface EncoderModel {
   readme?: boolean;
   /** Rerankers run by node-llama-cpp (GPU when available): download URI and file name in models/rerank. */
   gguf?: { uri: string; file: string };
+  /** Rerankers: the share of the final score fitted to this model's score scale (default 0.15, the Qwen3 rerankers'),
+   * and whether its scores are stretched to 0-1 per search first (for a model that squeezes them). */
+  weight?: number;
+  scale?: 'minmax';
 }
 
 export const ENCODERS: Record<string, EncoderModel> = {
@@ -23,13 +27,17 @@ export const ENCODERS: Record<string, EncoderModel> = {
   // (Qwen3-Embedding, Harrier, EmbeddingGemma 2, Nomic v2) were not kept: they embed all 2,000 candidates per search.
   minilm: { id: 'Xenova/all-MiniLM-L6-v2', kind: 'embed', mb: 23, pooling: 'mean' },
   'granite-small': { id: 'onnx-community/granite-embedding-small-english-r2-ONNX', kind: 'embed', mb: 97, pooling: 'cls' },
-  // Rerankers: on the same pools and shortlist, no LLM, the best ordering of each one's top 10 scored nDCG 0.49
-  // (ms-marco-L6), 0.55 (mxbai-rerank-base-v1), 0.61 (Qwen3 0.6B, +1 s per search) and 0.67 (Qwen3 4B, +15 s).
-  // ms-marco (the reranker of AppForge 0.1) stays listed so `appforge setup models` can remove its files.
-  'msmarco-l6': { id: 'Xenova/ms-marco-MiniLM-L-6-v2', kind: 'rerank', mb: 23, readme: true },
+  // Rerankers on the 20 test prompts, nDCG@10 / top-10 results Qwen3-Reranker-4B judges on-topic / off-topic:
+  //   small setup:    Qwen3-Reranker-0.6B 0.61 / 63% / 6%; gte-reranker-modernbert-base 0.64 / 51% / 23% with its raw
+  //                   scores, 0.58 / 72% / 8% stretched per search; nDCG differences of +-0.03 are noise on 20 prompts.
+  //   balanced setup: Qwen3-0.6B 0.61 / 60% / 7%; gte stretched 0.62 / 64% / 14%; bge-reranker-v2-m3 0.58; mxbai-xsmall 0.57.
+  //   best setup:     Qwen3-Reranker-4B 0.70 / 72% / 0%, the only clear difference (+0.09 over the 0.6B, 14 of 18 prompts).
+  // gte (150M, an encoder) takes 3.8 s per 150 repos on the CPU, the 0.6B 3.7 s on a GPU but 13-26 s on a CPU. gte rates
+  // almost every repo above 0.8, so its scores are stretched to 0-1 per search before the blend.
+  'gte-rerank-modernbert': { id: 'Alibaba-NLP/gte-reranker-modernbert-base', kind: 'rerank', mb: 151, readme: false, weight: 1, scale: 'minmax' },
   'qwen3-rerank-0.6b': { id: 'Qwen3-Reranker-0.6B', kind: 'rerank', mb: 639, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf', file: 'Qwen3-Reranker-0.6B.Q8_0.gguf' } },
-  // Under test (Oct 2026): 0.63 vs Qwen3-0.6B's 0.61 on 20 prompts with rerankWeight 1.0, 3.8 s per 150 repos on the CPU.
-  'gte-rerank-modernbert': { id: 'Alibaba-NLP/gte-reranker-modernbert-base', kind: 'rerank', mb: 151, readme: false },
+  // AppForge 0.1's reranker, listed so `appforge setup models` can remove its files.
+  'msmarco-l6': { id: 'Xenova/ms-marco-MiniLM-L-6-v2', kind: 'rerank', mb: 23, readme: true },
   'qwen3-rerank-4b': { id: 'Qwen3-Reranker-4B', kind: 'rerank', mb: 2497, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-4B-GGUF/Qwen3-Reranker-4B.Q4_K_M.gguf', file: 'Qwen3-Reranker-4B.Q4_K_M.gguf' } },
 };
 
@@ -72,7 +80,7 @@ export interface Profile {
 }
 
 export const PROFILES: Record<ProfileName, Profile> = {
-  small: { embed: 'minilm', rerank: 'qwen3-rerank-0.6b', poolSize: 500, rerankPool: 150, quality: 0.61, timings: { github: 22, encGpu: 5, encCpu: 25 }, hardware: { ramGB: 4, vramGB: 2 } },
+  small: { embed: 'minilm', rerank: 'gte-rerank-modernbert', poolSize: 500, rerankPool: 150, quality: 0.58, timings: { github: 22, encGpu: 5, encCpu: 6 }, hardware: { ramGB: 2, vramGB: 1 } },
   balanced: { embed: 'granite-small', rerank: 'qwen3-rerank-0.6b', poolSize: 1000, rerankPool: 150, quality: 0.61, timings: { github: 22, encGpu: 6, encCpu: 30 }, hardware: { ramGB: 4, vramGB: 2 } },
   best: { embed: 'granite-small', rerank: 'qwen3-rerank-4b', poolSize: 2000, rerankPool: 150, quality: 0.7, timings: { github: 25, encGpu: 17, encCpu: 110 }, hardware: { ramGB: 6, vramGB: 4 } },
 };
@@ -80,14 +88,17 @@ export const PROFILES: Record<ProfileName, Profile> = {
 export const isProfile = (name: string): name is ProfileName => (PROFILE_NAMES as string[]).includes(name);
 
 /** The models and sizes of the configured profile; non-empty settings win (a model key or a Hugging Face id). */
-export function resolveModels(r: { modelProfile: string; embedModel: string; rerankModel: string; poolSize: number; rerankPool: number }) {
+export function resolveModels(r: { modelProfile: string; embedModel: string; rerankModel: string; rerankWeight: number; poolSize: number; rerankPool: number }) {
   const profile: ProfileName = isProfile(r.modelProfile) ? r.modelProfile : 'best';
   const p = PROFILES[profile];
   const encoder = (key: string, kind: 'embed' | 'rerank'): EncoderModel => ENCODERS[key] ?? { id: key, kind, mb: 0, pooling: 'mean', readme: true };
+  const rerank = encoder(r.rerankModel || p.rerank, 'rerank');
   return {
     profile,
     embed: encoder(r.embedModel || p.embed, 'embed'),
-    rerank: encoder(r.rerankModel || p.rerank, 'rerank'),
+    rerank,
+    rerankWeight: r.rerankWeight > 0 ? r.rerankWeight : (rerank.weight ?? 0.15),
+    rerankScale: rerank.scale,
     poolSize: r.poolSize > 0 ? r.poolSize : p.poolSize,
     rerankPool: r.rerankPool > 0 ? r.rerankPool : p.rerankPool,
   };

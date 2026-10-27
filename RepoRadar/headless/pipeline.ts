@@ -30,6 +30,7 @@ export interface SearchSettings {
   rerankPool: number;
   minRerankScore: number;
   rerankWeight: number;
+  rerankScale?: 'minmax';
   finalists: number;
   /** Unload the GGUF reranker after this many idle minutes. */
   modelIdleMinutes: number;

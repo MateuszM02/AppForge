@@ -41,7 +41,7 @@ The one command above does everything, without administrator rights:
    (if any) is not touched.
 3. Installs the dependencies and builds AppForge.
 4. Downloads the **Camoufox** browser (~300 MB) and the repo-search models. It asks for a profile and shows each
-   one's size, memory needs and estimated search time on your computer: **small** 0.7 GB, **balanced** 0.7 GB or
+   one's size, memory needs and estimated search time on your computer: **small** 0.2 GB, **balanced** 0.7 GB or
    **best** 2.6 GB (Enter = best; a GPU makes the best profile's reranker much faster). `APPFORGE_MODELS=small|balanced|best` answers without
    asking, `APPFORGE_MINIMAL=1` skips the downloads (`appforge setup` later), and `appforge setup models` switches.
 5. Adds the `appforge` command and registers the MCP server in **VS Code** (and VS Code Insiders) and
@@ -191,7 +191,7 @@ setting can also be an environment variable `APPFORGE_<SECTION>_<KEY>` (e.g. `AP
 | `repos.waitSeconds` | 40 | how long `repo_search` waits before returning a job id |
 | `repos.modelProfile` | best | `small`, `balanced` or `best` (set by `appforge setup models`) |
 | `repos.minRerankScore` | 0.01 | never show a repo the cross-encoder rates below this, however popular |
-| `repos.rerankWeight` | 0.15 | the cross-encoder's share of the final score (the rest is popularity); fitted to the Qwen3 rerankers |
+| `repos.rerankWeight` | 0 | the cross-encoder's share of the final score (the rest is popularity); 0 = fitted to the profile's reranker |
 | `repos.modelIdleMinutes` | 10 | unload the GGUF reranker after this much idle time |
 | `updateCheck` | true | look for a newer AppForge at start |
 

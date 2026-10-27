@@ -89,7 +89,7 @@ const spec = (m) => ({ id: m.id, pooling: m.pooling, readme: m.readme, gguf: rer
 async function evaluate(profile, item) {
   const c = loadConfig().repos;
   const m = resolveModels({ ...c, modelProfile: profile });
-  const s = { poolSize: m.poolSize, minSimilarity: c.minSimilarity, rerankPool: m.rerankPool, minRerankScore: c.minRerankScore, rerankWeight: c.rerankWeight, finalists: c.finalists, expandTopics: EXPAND.topics, expandPool: EXPAND.pool, cacheDir };
+  const s = { poolSize: m.poolSize, minSimilarity: c.minSimilarity, rerankPool: m.rerankPool, minRerankScore: c.minRerankScore, rerankWeight: m.rerankWeight, rerankScale: m.rerankScale, finalists: c.finalists, expandTopics: EXPAND.topics, expandPool: EXPAND.pool, cacheDir };
   const started = Date.now();
   const reference = await cached(`ref-${key(item.prompt)}.json`, () => r.reference(item.prompt));
   const found = await findRepos(item.prompt, {}, s, {
