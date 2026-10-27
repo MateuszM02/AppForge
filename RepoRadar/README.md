@@ -10,7 +10,7 @@ pipeline ([headless/pipeline.ts](headless/pipeline.ts)) that reuses upstream's m
 1. **Fetch** ([headless/fetch.ts](headless/fetch.ts), [headless/search.ts](headless/search.ts)): LLM-free queries
    (stoplist, synonyms such as txt→text and scrape→scraping, "X to Y" phrases, a named language as a `language:`
    qualifier; kinds of project such as "library" never make a query alone), GitHub topics close to the need, and paged
-   GraphQL search: 500-2,000 candidates. A second round, started as soon as the first pages are in, searches 5 topics
+   GraphQL search: 500-1,000 candidates. A second round, started as soon as the first pages are in, searches 5 topics
    shared by the 30 best matches so far (similarity and popularity), the more need-like half by the topic's own
    embedding: it finds projects described in other words (scrapy for "scrape", speech-to-text for "transcribe").
 2. **Embed** ([headless/rank.ts](headless/rank.ts)): a small embedding model drops repos below a fixed similarity and
@@ -34,13 +34,13 @@ RAM is the free memory a profile needs; GPU memory holds all its models and thei
 | Profile | Download | RAM / GPU memory | Embedding | Cross-encoder | Pool / K | nDCG@10* |
 |---|---|---|---|---|---|---|
 | small | 0.2 GB | 2 / 1 GB | all-MiniLM-L6-v2 | gte-reranker-modernbert-base | 500 / 150 | 0.58 |
-| balanced | 0.7 GB | 4 / 2 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-0.6B | 1,000 / 150 | 0.61 |
-| best | 2.6 GB | 6 / 4 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-4B | 2,000 / 150 | 0.70 |
+| balanced | 1.2 GB | 4 / 2 GB | granite-embedding-small-english-r2 | zerank-1-small (1.7B) | 1,000 / 150 | 0.69 |
+| best | 2.6 GB | 6 / 4 GB | granite-embedding-small-english-r2 | zerank-2 (4B) | 1,000 / 150 | 0.74† |
 
 * on the 20 prompts of tests/search-gold.json (apps, self-hosted tools, "alternative to X", libraries in several
-languages, CLIs, ML, devops). Of their top 10, Qwen3-Reranker-4B judges 72% / 60% / 72% on-topic and 8% / 7% / 0%
-off-topic; nDCG differences below about 0.07 are within the noise of 20 prompts; about 30 / 30 /
-45 s per search on a Radeon RX 6800, of which about 22 s is GitHub. On the first 10 of them,
+languages, CLIs, ML, devops). Of their top 10, Qwen3-Reranker-4B judges 72% / 68% / 70% on-topic and zerank-2
+- / 86% / 92%; nDCG differences below about 0.07 are within the noise of 20 prompts. About 22 s of each search is
+GitHub. † measured with 2,000 candidates; 1,000 gave the same top 10 on 18 of 20 prompts. On the first 10 of them,
 AppForge 0.1 scored 0.27 end to end, and its models (MiniLM + ms-marco-MiniLM-L-6) 0.37 with this fetch.
 
 Chosen with `node scripts/eval-search.mjs` (tests/search-gold.json) and fixed candidate pools of its first 10 prompts:
@@ -49,12 +49,14 @@ Chosen with `node scripts/eval-search.mjs` (tests/search-gold.json) and fixed ca
   against MiniLM's 93%, and far more evenly (worst prompt 0.83 vs 0.67) for about 4 s more per search. bge-small/base,
   arctic-embed-s and gte-modernbert were no better; the 0.5-0.7B embedders (Qwen3-Embedding, Harrier, EmbeddingGemma 2,
   Nomic v2) were not kept, as they embed all 2,000 candidates per search at several times the cost.
-- Reranker: Qwen3-Reranker-4B is the only clear step (0.70 vs 0.61 for the 0.6B, better on 14 of 18 prompts). The
-  small profile's gte-reranker-modernbert-base (150M) ties the 0.6B on nDCG, has the most on-topic top 10 of the small
+- Reranker: zerank-1-small (a Qwen3 chat model scored by the logit of "Yes") lifts balanced from Qwen3-Reranker-0.6B's
+  0.61 to 0.69, level with Qwen3-Reranker-4B (0.70), and both judges prefer it to the 0.6B; zerank-2 scores 0.74 against
+  the 4B's 0.70 at the same speed (within the noise; each judge prefers its own family). The
+  small profile's gte-reranker-modernbert-base (150M) ties Qwen3-0.6B on nDCG, has the most on-topic top 10 of the small
   setups (72% vs 63%) and takes 3.8 s per 150 repos on a CPU, where the 0.6B needs 13-26 s. With its raw scores it
   scored a higher nDCG (0.64) but let a quarter unrelated famous repos in, which the sparse labels did not show; its
   scores are stretched to 0-1 per search instead. bge-reranker-v2-m3 (0.58) and mxbai-rerank-xsmall-v1 (0.57) lost.
-- Pool: 500 candidates already hold 96% of the must-have answers; more mostly adds alternatives.
+- Pool: 500 candidates already hold 96% of the must-have answers; 2,000 instead of 1,000 changed 2 of 20 top 10s.
 - Floor: the embedding cannot tell junk from answers (Granite rates every shortlisted repo 0.75-0.87, and they
   overlap), the reranker can: below 0.01 sat about 800 shortlisted repos and no expected one.
 - LLM: none. Ordering the top 10, Qwen3.5-2B and -4B scored lower than the blend (0.48 and 0.57 against

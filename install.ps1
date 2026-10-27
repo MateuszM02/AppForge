@@ -12,7 +12,7 @@
 #      your own Node, if any, is not touched.
 #   3. Installs the dependencies and builds AppForge (only when the version changed).
 #   4. Downloads the Camoufox browser (~300 MB) and the repo-search models: asks for a profile, small / balanced /
-#      best (about 0.2 / 0.7 / 2.6 GB), showing the estimated search time here; Enter = best.
+#      best (about 0.2 / 1.2 / 2.6 GB), showing the estimated search time here; Enter = best.
 #   5. Adds the `appforge` command (%USERPROFILE%\.local\bin) and registers AppForge in VS Code and Claude Code.
 #   6. Offers to install the GitHub CLI and log in (needed for repo_search).
 # Safe to re-run to update. uninstall.ps1 removes it all again.

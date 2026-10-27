@@ -29,22 +29,23 @@ export const ENCODERS: Record<string, EncoderModel> = {
   // (Qwen3-Embedding, Harrier, EmbeddingGemma 2, Nomic v2) were not kept: they embed all 2,000 candidates per search.
   minilm: { id: 'Xenova/all-MiniLM-L6-v2', kind: 'embed', mb: 23, pooling: 'mean' },
   'granite-small': { id: 'onnx-community/granite-embedding-small-english-r2-ONNX', kind: 'embed', mb: 97, pooling: 'cls' },
-  // Rerankers on the 20 test prompts, nDCG@10 / top-10 results Qwen3-Reranker-4B judges on-topic / off-topic:
-  //   small setup:    Qwen3-Reranker-0.6B 0.61 / 63% / 6%; gte-reranker-modernbert-base 0.64 / 51% / 23% with its raw
-  //                   scores, 0.58 / 72% / 8% stretched per search; nDCG differences of +-0.03 are noise on 20 prompts.
-  //   balanced setup: Qwen3-0.6B 0.61 / 60% / 7%; gte stretched 0.62 / 64% / 14%; bge-reranker-v2-m3 0.58; mxbai-xsmall 0.57.
-  //   best setup:     Qwen3-Reranker-4B 0.70 / 72% / 0%, the only clear difference (+0.09 over the 0.6B, 14 of 18 prompts).
-  // gte (150M, an encoder) takes 3.8 s per 150 repos on the CPU, the 0.6B 3.7 s on a GPU but 13-26 s on a CPU. gte rates
-  // almost every repo above 0.8, so its scores are stretched to 0-1 per search before the blend.
+  // Rerankers on the 20 test prompts, nDCG@10 and the share of the top 10 judged on-topic by Qwen3-Reranker-4B / by
+  // zerank-2 (two judges, as each favours its own family):
+  //   zerank-2 (4B)          0.74, 70% / 92%  (2,000 candidates; Qwen3-Reranker-4B 0.70, 72% / 82%), 11.5 s per 150 repos
+  //   zerank-1-small (1.7B)  0.69, 68% / 86%  (1,000 candidates; Qwen3-Reranker-0.6B 0.61, 60% / 76%), 8.9 s
+  //   gte-reranker-modernbert-base (150M, an encoder) 0.58 with MiniLM, 72% on-topic by Qwen3-4B; 3.8 s on the CPU
+  // (times on a Radeon RX 6800). zerank is a Qwen3 chat model scored by its "Yes" logit (encoders.ts yesRank). gte rates
+  // almost every repo above 0.8, so its scores are stretched to 0-1 per search; with raw scores it let a quarter
+  // unrelated famous repos into the top 10. Lost: bge-reranker-v2-m3 0.58, mxbai-rerank-xsmall-v1 0.57, R3-rerank-0.6b;
+  // the Ettin encoders' scoring head is in no ONNX or GGUF build. nDCG differences under about 0.07 are noise here.
   'gte-rerank-modernbert': { id: 'Alibaba-NLP/gte-reranker-modernbert-base', kind: 'rerank', mb: 151, readme: false, weight: 1, scale: 'minmax' },
+  'zerank-1-small': { id: 'zerank-1-small', kind: 'rerank', mb: 1107, readme: false, yes: 'Yes', weight: 0.35, gguf: { uri: 'hf:keisuke-miyako/zerank-1-small-gguf-q4_k_m/zerank-1-small-Q4_k_m.gguf', file: 'zerank-1-small-Q4_k_m.gguf' } },
+  'zerank-2': { id: 'zerank-2', kind: 'rerank', mb: 2497, readme: false, yes: 'Yes', weight: 0.35, gguf: { uri: 'hf:keisuke-miyako/zerank-2-gguf-q4_k_m/zerank-2-Q4_k_m.gguf', file: 'zerank-2-Q4_k_m.gguf' } },
+  // Earlier profiles' rerankers (0.1 to 0.4), listed so `appforge setup models` can remove their files.
   'qwen3-rerank-0.6b': { id: 'Qwen3-Reranker-0.6B', kind: 'rerank', mb: 639, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf', file: 'Qwen3-Reranker-0.6B.Q8_0.gguf' } },
-  // Under test (Oct 2026), weight 0.35 on the 20 prompts: zerank-2 0.74 with 2,000 candidates (Qwen3-4B 0.70; 11.5 s per
-  // 150 repos on an RX 6800, as the 4B), zerank-1-small 0.69 with 1,000 (Qwen3-0.6B 0.61; 8.9 s).
-  'zerank-1-small': { id: 'zerank-1-small', kind: 'rerank', mb: 1107, readme: false, yes: 'Yes', gguf: { uri: 'hf:keisuke-miyako/zerank-1-small-gguf-q4_k_m/zerank-1-small-Q4_k_m.gguf', file: 'zerank-1-small-Q4_k_m.gguf' } },
-  'zerank-2': { id: 'zerank-2', kind: 'rerank', mb: 2497, readme: false, yes: 'Yes', gguf: { uri: 'hf:keisuke-miyako/zerank-2-gguf-q4_k_m/zerank-2-Q4_k_m.gguf', file: 'zerank-2-Q4_k_m.gguf' } },
+  'qwen3-rerank-4b': { id: 'Qwen3-Reranker-4B', kind: 'rerank', mb: 2497, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-4B-GGUF/Qwen3-Reranker-4B.Q4_K_M.gguf', file: 'Qwen3-Reranker-4B.Q4_K_M.gguf' } },
   // AppForge 0.1's reranker, listed so `appforge setup models` can remove its files.
   'msmarco-l6': { id: 'Xenova/ms-marco-MiniLM-L-6-v2', kind: 'rerank', mb: 23, readme: true },
-  'qwen3-rerank-4b': { id: 'Qwen3-Reranker-4B', kind: 'rerank', mb: 2497, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-4B-GGUF/Qwen3-Reranker-4B.Q4_K_M.gguf', file: 'Qwen3-Reranker-4B.Q4_K_M.gguf' } },
 };
 
 /** No local LLM: as the final pick, Qwen3.5-2B and -4B ordered the top 10 worse than the reranker and popularity blend
@@ -75,8 +76,9 @@ export interface Hardware {
 export interface Profile {
   embed: string;
   rerank: string;
-  /** Candidates fetched (about 500 already hold almost every must-have answer of the test set) and how many of them
-   * the cross-encoder reads: the best top 10 drew on positions up to 140, so 150. */
+  /** Candidates fetched (about 500 already hold almost every must-have answer of the test set; 2,000 gave the same top
+   * 10 as 1,000 on 18 of 20 prompts, so no profile fetches more) and how many of them the cross-encoder reads: the best
+   * top 10 drew on positions up to 148, so 150. */
   poolSize: number;
   rerankPool: number;
   /** nDCG@10 on the 20 prompts of tests/search-gold.json (scripts/eval-search.mjs, Oct 2026), and the seconds per search. */
@@ -87,8 +89,9 @@ export interface Profile {
 
 export const PROFILES: Record<ProfileName, Profile> = {
   small: { embed: 'minilm', rerank: 'gte-rerank-modernbert', poolSize: 500, rerankPool: 150, quality: 0.58, timings: { github: 22, encGpu: 5, encCpu: 6 }, hardware: { ramGB: 2, vramGB: 1 } },
-  balanced: { embed: 'granite-small', rerank: 'qwen3-rerank-0.6b', poolSize: 1000, rerankPool: 150, quality: 0.61, timings: { github: 22, encGpu: 6, encCpu: 30 }, hardware: { ramGB: 4, vramGB: 2 } },
-  best: { embed: 'granite-small', rerank: 'qwen3-rerank-4b', poolSize: 2000, rerankPool: 150, quality: 0.7, timings: { github: 25, encGpu: 17, encCpu: 110 }, hardware: { ramGB: 6, vramGB: 4 } },
+  balanced: { embed: 'granite-small', rerank: 'zerank-1-small', poolSize: 1000, rerankPool: 150, quality: 0.69, timings: { github: 22, encGpu: 11.5, encCpu: 70 }, hardware: { ramGB: 4, vramGB: 2 } },
+  // best's nDCG was measured with 2,000 candidates; the 1,000 it fetches now changed 2 of 20 top 10s with zerank-1-small.
+  best: { embed: 'granite-small', rerank: 'zerank-2', poolSize: 1000, rerankPool: 150, quality: 0.74, timings: { github: 22, encGpu: 14, encCpu: 110 }, hardware: { ramGB: 6, vramGB: 4 } },
 };
 
 export const isProfile = (name: string): name is ProfileName => (PROFILE_NAMES as string[]).includes(name);

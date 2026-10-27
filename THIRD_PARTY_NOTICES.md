@@ -184,8 +184,8 @@ part of this repository, and each keeps its own licence:
 | [Xenova/all-MiniLM-L6-v2](https://huggingface.co/Xenova/all-MiniLM-L6-v2) | embedding (small) | Apache-2.0 |
 | [onnx-community/granite-embedding-small-english-r2-ONNX](https://huggingface.co/onnx-community/granite-embedding-small-english-r2-ONNX) | embedding (balanced, best) | Apache-2.0 |
 | [Alibaba-NLP/gte-reranker-modernbert-base](https://huggingface.co/Alibaba-NLP/gte-reranker-modernbert-base) | cross-encoder (small) | Apache-2.0 |
-| [giladgd/Qwen3-Reranker-0.6B-GGUF](https://huggingface.co/giladgd/Qwen3-Reranker-0.6B-GGUF) | cross-encoder (balanced) | Apache-2.0 |
-| [giladgd/Qwen3-Reranker-4B-GGUF](https://huggingface.co/giladgd/Qwen3-Reranker-4B-GGUF) | cross-encoder (best) | Apache-2.0 |
+| [zeroentropy/zerank-1-small-reranker](https://huggingface.co/zeroentropy/zerank-1-small-reranker) (GGUF: [keisuke-miyako/zerank-1-small-gguf-q4_k_m](https://huggingface.co/keisuke-miyako/zerank-1-small-gguf-q4_k_m)) | cross-encoder (balanced) | Apache-2.0 |
+| [zeroentropy/zerank-2-reranker](https://huggingface.co/zeroentropy/zerank-2-reranker) (GGUF: [keisuke-miyako/zerank-2-gguf-q4_k_m](https://huggingface.co/keisuke-miyako/zerank-2-gguf-q4_k_m)) | cross-encoder (best) | Apache-2.0 |
 
 ## Skills and plugins indexed at run time
 
