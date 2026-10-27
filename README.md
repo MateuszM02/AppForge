@@ -163,7 +163,7 @@ Windows `%LOCALAPPDATA%\AppForge`, macOS `~/Library/Application Support/AppForge
 | `config.json` | your settings (only what differs from the defaults) |
 | `memory/` | the memory: `INDEX.md`, `FORMAT.md`, `global/`, `projects/<key>/`, `archive/` |
 | `cache/` | GitHub cache, skill catalog, RepoRadar cache and logs |
-| `models/` | the repo-search models of your profile (`models/llm/` holds the optional LLM) |
+| `models/` | the repo-search models of your profile |
 | `browser/` | browser profiles, cookies, downloads |
 | `node/`, `app/` | the private Node.js and the code (when installed with the one-line command) |
 
@@ -190,8 +190,8 @@ setting can also be an environment variable `APPFORGE_<SECTION>_<KEY>` (e.g. `AP
 | `browser.maxSnapshotChars` | 15000 | longest page snapshot returned at once; the rest comes with `browser_snapshot` offset |
 | `repos.waitSeconds` | 40 | how long `repo_search` waits before returning a job id |
 | `repos.modelProfile` | best | `small`, `balanced` or `best` (set by `appforge setup models`) |
-| `repos.llm` | false | let a local LLM (Qwen3.5-4B, 2.7 GB more) drop off-topic results; 25 s more per search, no measured gain in ranking |
-| `repos.llmTimeoutSeconds` | 240 | give up on the LLM filter after this long |
+| `repos.minRerankScore` | 0.01 | never show a repo the cross-encoder rates below this, however popular |
+| `repos.modelIdleMinutes` | 10 | unload the GGUF reranker after this much idle time |
 | `updateCheck` | true | look for a newer AppForge at start |
 
 Other environment variables: `GITHUB_TOKEN` / `GH_TOKEN` (GitHub access), `APPFORGE_HOME` (data folder),
@@ -242,7 +242,7 @@ npm run build       # TypeScript + the RepoRadar bundle
 npm test            # unit tests (a few seconds)
 npm run smoke       # starts the server over stdio and calls tools of every group against real services
 node scripts/smoke.mjs memory skills    # only some groups
-node scripts/eval-search.mjs --tag try  # repo_search quality on tests/search-gold.json (real GitHub, ~5 min)
+node scripts/eval-search.mjs --profiles small,balanced,best  # repo_search quality on tests/search-gold.json (cached: seconds when nothing changed)
 ```
 
 Layout: [server/](server/) (hub), [memory/](memory/), [skill-sources/](skill-sources/),

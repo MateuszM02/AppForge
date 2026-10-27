@@ -135,7 +135,7 @@ async function ask(question: string): Promise<string> {
 async function detectGpu(): Promise<string | false> {
   try {
     const { getLlama, LlamaLogLevel } = await import('node-llama-cpp');
-    const llama = await getLlama({ gpu: process.env.APPFORGE_LLM_GPU === 'off' ? false : 'auto', build: 'never', progressLogs: false, logLevel: LlamaLogLevel.error });
+    const llama = await getLlama({ gpu: process.env.APPFORGE_GPU === 'off' ? false : 'auto', build: 'never', progressLogs: false, logLevel: LlamaLogLevel.error });
     const gpu = llama.gpu;
     await llama.dispose();
     return gpu;
@@ -192,10 +192,8 @@ async function offerCleanup(profile: import('./models.js').ProfileName): Promise
     const dir = e.gguf ? path.join(paths.models, 'rerank', e.gguf.file) : path.join(paths.models, ...e.id.split('/'));
     if (key !== keep.embed && key !== keep.rerank && fs.existsSync(dir)) unused.push(dir);
   }
-  for (const l of Object.values(m.LLMS)) {
-    const file = path.join(paths.models, 'llm', l.file);
-    if (!loadConfig().repos.llm && fs.existsSync(file)) unused.push(file); // the optional LLM filter is off
-  }
+  const llms = path.join(paths.models, m.LEGACY_LLM_DIR);
+  if (fs.existsSync(llms)) unused.push(llms);
   if (!unused.length) return;
   const size = (p: string): number => {
     const st = fs.statSync(p);

@@ -57,7 +57,6 @@ export async function status() {
   const present = {
     embedding: exists(path.join(models, ...rm.embed.id.split('/'))),
     crossEncoder: rm.rerank.gguf ? exists(path.join(models, 'rerank', rm.rerank.gguf.file)) : exists(path.join(models, ...rm.rerank.id.split('/'))),
-    llm: rm.llm !== null && (exists(path.join(models, 'llm', rm.llm.file)) || exists(rm.llm.uri)),
   };
   return {
     version: VERSION,
@@ -74,9 +73,8 @@ export async function status() {
       models: {
         embedding: { id: rm.embed.id, downloaded: present.embedding },
         crossEncoder: { id: rm.rerank.id, downloaded: present.crossEncoder },
-        llm: rm.llm ? { file: rm.llm.file, downloaded: present.llm, pick: cfg.repos.llm } : { file: null, pick: false },
       },
-      modelsDownloaded: present.embedding && present.crossEncoder && (present.llm || !cfg.repos.llm || !rm.llm),
+      modelsDownloaded: present.embedding && present.crossEncoder,
       needsGithubLogin: githubToken() === null,
     },
     memory: { folder: paths.memory, limits: cfg.memory },

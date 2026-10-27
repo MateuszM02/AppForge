@@ -70,25 +70,20 @@ export const DEFAULTS = {
     waitSeconds: 40,
     /** Which local models rank results: small, balanced or best (see `appforge setup models`). */
     modelProfile: 'best',
-    /** Override the profile's models: a key from server/src/models.ts, a Hugging Face id, or (LLM) a GGUF path. */
+    /** Override the profile's models: a key from server/src/models.ts or a Hugging Face id. */
     embedModel: '',
     rerankModel: '',
-    llmModel: '',
     /** Repos fetched from GitHub, and how many of them the cross-encoder reads; 0 = the profile's value. */
     poolSize: 0,
     rerankPool: 0,
-    /** Stage floors: embedding similarity and cross-encoder score below which a repo is dropped. */
+    /** Stage floors: embedding similarity, and the cross-encoder score below which a repo is never shown, however popular
+     * (0.01 removed the unrelated famous repos from the results and none of the expected ones on the test set). */
     minSimilarity: 0.2,
-    minRerankScore: 0,
-    /** How many repos reach the final pick. */
+    minRerankScore: 0.01,
+    /** How many repos the search returns. */
     finalists: 10,
-    /** Let a local LLM (Qwen3.5-4B, 2.7 GB) drop off-topic results. Off by default: it adds 25 s per search and did not
-     * raise the measured ranking quality. */
-    llm: false,
-    /** Give up on the LLM filter after this long and drop nothing (CPU-only machines are slow). */
-    llmTimeoutSeconds: 240,
-    /** Unload the LLM after this many idle minutes to free its memory. */
-    llmIdleMinutes: 10,
+    /** Unload the GGUF reranker after this many idle minutes to free its memory. */
+    modelIdleMinutes: 10,
   },
   /** Check GitHub for a newer AppForge when the server starts. */
   updateCheck: true,

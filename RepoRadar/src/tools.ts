@@ -54,16 +54,11 @@ function formatSearch(s: RadarSearch): string {
 /** One line on what each stage did, so the agent (and the user) can judge how far to trust the list. */
 export function formatStats(st: RadarStats): string {
   const r = st.rank;
-  const llm = {
-    used: `the local LLM checked the list${st.llmDropped ? ` and dropped ${st.llmDropped} as off-topic` : ' and dropped none'}`,
-    off: 'ranked by the cross-encoder and popularity',
-    unavailable: 'the local LLM filter (repos.llm) is on but its model is missing (run `appforge setup models`)',
-    failed: 'the local LLM filter did not answer in time, so nothing was dropped',
-  }[st.llm];
   const stages = r
-    ? `${st.pool} candidates from ${st.queries.length} GitHub searches; ` +
-      `the embedding model dropped ${r.belowSimilarity} and passed ${r.reranked} to the cross-encoder, which dropped ${r.belowRerankScore} and kept ${r.finalists}; ${llm}.`
-    : `${st.pool} candidates; ${llm}.`;
+    ? `${st.pool} candidates from ${st.queries.length} GitHub searches${st.expansion.length ? ` (then topics of the first results: ${st.expansion.join(', ')})` : ''}; ` +
+      `the embedding model dropped ${r.belowSimilarity} and passed ${r.reranked} to the cross-encoder, which dropped ${r.belowRerankScore} as off-topic; ` +
+      `the ${r.finalists} shown are ranked by the cross-encoder and popularity.`
+    : `${st.pool} candidates.`;
   const secs = Object.values(st.seconds).reduce((a, b) => a + b, 0);
   return `How this was found: ${stages} (${Math.round(secs)} s)`;
 }

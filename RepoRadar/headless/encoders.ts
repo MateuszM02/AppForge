@@ -3,7 +3,6 @@
 // (server/src/models.ts); both download once into the models folder.
 
 import { AutoModelForSequenceClassification, AutoTokenizer, env, pipeline } from '@huggingface/transformers';
-import { llamaRuntime } from './openai-local.js';
 
 export interface EncoderSpec {
   /** Hugging Face model id with ONNX weights, e.g. "Xenova/bge-small-en-v1.5". */
@@ -120,10 +119,28 @@ function crossEncoder(spec: EncoderSpec) {
   return p;
 }
 
+let llama: Promise<any> | null = null;
+
+/** node-llama-cpp's engine for the GGUF rerankers: the GPU when it finds a usable one (Vulkan, CUDA, Metal), else the CPU. */
+function llamaRuntime(): Promise<any> {
+  // Prebuilt binaries only (the package's install script is off); stdout belongs to the MCP transport.
+  llama ??= import('node-llama-cpp').then((lib) =>
+    lib.getLlama({
+      gpu: process.env.APPFORGE_GPU === 'off' ? false : 'auto',
+      build: 'never',
+      progressLogs: false,
+      logLevel: lib.LlamaLogLevel.warn,
+      logger: (level, message) => process.stderr.write(`[reranker] ${level}: ${message}
+`),
+    }),
+  );
+  return llama;
+}
+
 /** GGUF rerankers by file. */
 const rankers = new Map<string, Promise<{ model: any; context: any; timer?: NodeJS.Timeout }>>();
 
-/** A GGUF reranker and its ranking context, loaded once per file and unloaded like the LLM after APPFORGE_LLM_IDLE_MS. */
+/** A GGUF reranker and its ranking context, loaded once per file and unloaded after APPFORGE_MODEL_IDLE_MS idle. */
 function ggufRanker(file: string): Promise<{ model: any; context: any; timer?: NodeJS.Timeout }> {
   let p = rankers.get(file);
   if (!p) {
@@ -148,7 +165,7 @@ async function ggufRank(file: string, query: string, docs: string[]): Promise<nu
       r.timer = setTimeout(() => {
         rankers.delete(file);
         void r.context.dispose().then(() => r.model.dispose()).catch(() => undefined);
-      }, Number(process.env.APPFORGE_LLM_IDLE_MS) || 600_000).unref();
+      }, Number(process.env.APPFORGE_MODEL_IDLE_MS) || 600_000).unref();
     }
   });
 }

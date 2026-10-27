@@ -6,7 +6,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadConfig } from '../../server/src/config.js';
 import { githubToken } from '../../server/src/github.js';
-import { resolveModels, type EncoderModel, type LlmModel } from '../../server/src/models.js';
+import { resolveModels, type EncoderModel } from '../../server/src/models.js';
 import { paths, repoRoot } from '../../server/src/paths.js';
 
 export interface RadarFilters {
@@ -29,11 +29,11 @@ export interface RadarResult {
 export interface RadarStats {
   queries: string[];
   topics: string[];
+  /** Topics of the first round's best matches, searched in a second round. */
+  expansion: string[];
   pool: number;
   githubCalls: number;
   rank: { pool: number; belowSimilarity: number; reranked: number; belowRerankScore: number; finalists: number } | null;
-  llm: 'used' | 'off' | 'unavailable' | 'failed';
-  llmDropped: number;
   seconds: Record<string, number>;
 }
 
@@ -58,17 +58,15 @@ export interface SearchSettings {
   rerankPool: number;
   minRerankScore: number;
   finalists: number;
-  llm: boolean;
-  /** The GGUF file of the local LLM, or null when it is not downloaded. */
-  llmModelPath: string | null;
-  llmTimeoutSeconds: number;
-  llmIdleMinutes: number;
+  /** Unload the GGUF reranker after this many idle minutes. */
+  modelIdleMinutes: number;
   cacheDir: string;
 }
 
 interface Headless {
   startSearch(prompt: string, filters: RadarFilters, settings: SearchSettings): Promise<{ id: string; done: Promise<void> }>;
   getSearch(id: string): Promise<RadarSearch | null>;
+  reference(prompt: string): Promise<{ refQueries: string[]; excludeFullNames: string[] } | null>;
   repoDetails(fullName: string, need?: string, rerank?: SearchSettings['rerank']): Promise<{ evidence: Record<string, unknown>; analysis: Record<string, unknown> } | null>;
 }
 
@@ -81,11 +79,8 @@ export function radar(): Promise<Headless> {
     const token = githubToken();
     // RepoRadar reads its settings from the environment once, when it loads.
     process.env.DATABASE_URL ??= 'appforge-sqlite';
-    // Upstream's LLM path is on only with NO_LLM_MODE off and a non-empty OpenRouter key. The key is a dummy: the
-    // bundler replaces the OpenAI client with openai-local.ts, which runs the listwise ranker on a local model and
-    // refuses every other prompt, so nothing is sent anywhere.
-    process.env.NO_LLM_MODE = 'false';
-    process.env.OPENROUTER_API_KEY = 'appforge-local';
+    // Upstream's LLM paths stay off; the bundler replaces the OpenAI client with a stub that throws.
+    process.env.NO_LLM_MODE = 'true';
     if (token) process.env.GITHUB_TOKEN = token;
     process.env.APPFORGE_RADAR_DB_DIR = paths.cache;
     process.env.APPFORGE_MODELS_DIR = paths.models;
@@ -95,12 +90,6 @@ export function radar(): Promise<Headless> {
     loaded = null;
   });
   return loaded;
-}
-
-/** Where a profile's GGUF lives (models/llm/<file>), or null when it is not there yet. */
-export function llmPath(m: LlmModel): string | null {
-  const file = fs.existsSync(m.uri) ? m.uri : path.join(paths.models, 'llm', m.file);
-  return fs.existsSync(file) ? file : null;
 }
 
 /** Where a GGUF reranker lives (models/rerank/<file>). */
@@ -119,10 +108,7 @@ export function searchSettings(): SearchSettings {
     rerankPool: m.rerankPool,
     minRerankScore: c.minRerankScore,
     finalists: c.finalists,
-    llm: c.llm && m.llm !== null,
-    llmModelPath: m.llm && llmPath(m.llm),
-    llmTimeoutSeconds: c.llmTimeoutSeconds,
-    llmIdleMinutes: c.llmIdleMinutes,
+    modelIdleMinutes: c.modelIdleMinutes,
     cacheDir: paths.cache,
   };
 }
@@ -164,9 +150,5 @@ export async function prefetchModels(profile?: string): Promise<string[]> {
     await resolveModelFile(m.rerank.gguf.uri, { directory: path.join(paths.models, 'rerank'), fileName: m.rerank.gguf.file, cli: process.stderr.isTTY === true });
   }
   await enc.warm(spec(m.rerank), 'rerank');
-  if (m.llm && !llmPath(m.llm)) {
-    const { resolveModelFile } = await import('node-llama-cpp');
-    await resolveModelFile(m.llm.uri, { directory: path.join(paths.models, 'llm'), fileName: m.llm.file, cli: process.stderr.isTTY === true });
-  }
-  return [m.embed.id, m.rerank.gguf?.file ?? m.rerank.id, ...(m.llm ? [m.llm.file] : [])];
+  return [m.embed.id, m.rerank.gguf?.file ?? m.rerank.id];
 }

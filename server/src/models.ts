@@ -31,22 +31,11 @@ export const ENCODERS: Record<string, EncoderModel> = {
   'qwen3-rerank-4b': { id: 'Qwen3-Reranker-4B', kind: 'rerank', mb: 2497, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-4B-GGUF/Qwen3-Reranker-4B.Q4_K_M.gguf', file: 'Qwen3-Reranker-4B.Q4_K_M.gguf' } },
 };
 
-/** The optional LLM filter (repos.llm, off by default), Q4_K_M GGUF in models/llm. As the final pick, Qwen3.5-2B and -4B
- * ordered the top 10 worse than the reranker and popularity blend (0.48 and 0.57 against 0.52 and 0.60 on cached pools of
- * the test set) and as a filter changed it by at most 0.01, for 22-34 s per search, so no profile uses one. Also tried:
- * granite-4.0-h-tiny/micro (kept traps), Ministral-3-3B and MiniCPM5-2B (slower, no better), Qwen3-1.7B (slow prompt). */
-export interface LlmModel {
-  uri: string;
-  file: string;
-  mb: number;
-}
-
-export const LLMS: Record<string, LlmModel> = {
-  'qwen3.5-4b': { uri: 'hf:unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_K_M.gguf', file: 'Qwen3.5-4B-Q4_K_M.gguf', mb: 2741 },
-  // The small profile's LLM in 0.2, listed so `appforge setup models` can remove it.
-  'qwen3.5-2b': { uri: 'hf:unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q4_K_M.gguf', file: 'Qwen3.5-2B-Q4_K_M.gguf', mb: 1281 },
-};
-const DEFAULT_LLM = 'qwen3.5-4b';
+/** No local LLM: as the final pick, Qwen3.5-2B and -4B ordered the top 10 worse than the reranker and popularity blend
+ * (0.48 and 0.57 against 0.52 and 0.60 on cached pools of the test set), and as a filter they changed it by at most 0.01
+ * for 22-34 s per search. Also tried: granite-4.0-h-tiny/micro, Ministral-3-3B, MiniCPM5-2B, Qwen3-1.7B. AppForge 0.2
+ * downloaded these into models/llm; `appforge setup models` removes that folder. */
+export const LEGACY_LLM_DIR = 'llm';
 
 export type ProfileName = 'small' | 'balanced' | 'best';
 export const PROFILE_NAMES: ProfileName[] = ['small', 'balanced', 'best'];
@@ -74,33 +63,29 @@ export interface Profile {
    * the cross-encoder reads: the best top 10 drew on positions up to 140, so 150. */
   poolSize: number;
   rerankPool: number;
-  /** nDCG@10 on the 10 prompts of tests/search-gold.json, on cached candidate pools (live searches measured about 0.04
-   * lower), and the seconds per search. */
+  /** nDCG@10 on the 20 prompts of tests/search-gold.json (scripts/eval-search.mjs, Oct 2026), and the seconds per search. */
   quality: number | null;
   timings: Timings | null;
   hardware: Hardware;
 }
 
 export const PROFILES: Record<ProfileName, Profile> = {
-  small: { embed: 'minilm', rerank: 'qwen3-rerank-0.6b', poolSize: 500, rerankPool: 150, quality: 0.52, timings: { github: 13, encGpu: 6, encCpu: 30 }, hardware: { ramGB: 4, vramGB: 2 } },
-  balanced: { embed: 'granite-small', rerank: 'qwen3-rerank-0.6b', poolSize: 1000, rerankPool: 150, quality: 0.56, timings: { github: 19, encGpu: 7.5, encCpu: 35 }, hardware: { ramGB: 4, vramGB: 2 } },
-  best: { embed: 'granite-small', rerank: 'qwen3-rerank-4b', poolSize: 2000, rerankPool: 150, quality: 0.6, timings: { github: 28, encGpu: 24.5, encCpu: 150 }, hardware: { ramGB: 6, vramGB: 4 } },
+  small: { embed: 'minilm', rerank: 'qwen3-rerank-0.6b', poolSize: 500, rerankPool: 150, quality: 0.6, timings: { github: 18, encGpu: 6, encCpu: 30 }, hardware: { ramGB: 4, vramGB: 2 } },
+  balanced: { embed: 'granite-small', rerank: 'qwen3-rerank-0.6b', poolSize: 1000, rerankPool: 150, quality: 0.61, timings: { github: 24, encGpu: 7.5, encCpu: 35 }, hardware: { ramGB: 4, vramGB: 2 } },
+  best: { embed: 'granite-small', rerank: 'qwen3-rerank-4b', poolSize: 2000, rerankPool: 150, quality: 0.68, timings: { github: 30, encGpu: 29, encCpu: 150 }, hardware: { ramGB: 6, vramGB: 4 } },
 };
 
 export const isProfile = (name: string): name is ProfileName => (PROFILE_NAMES as string[]).includes(name);
 
-/** The models and sizes of the configured profile; non-empty settings win (a model key, a Hugging Face id, a GGUF). The
- * LLM is there only when repos.llm is on. */
-export function resolveModels(r: { modelProfile: string; embedModel: string; rerankModel: string; llmModel: string; llm: boolean; poolSize: number; rerankPool: number }) {
+/** The models and sizes of the configured profile; non-empty settings win (a model key or a Hugging Face id). */
+export function resolveModels(r: { modelProfile: string; embedModel: string; rerankModel: string; poolSize: number; rerankPool: number }) {
   const profile: ProfileName = isProfile(r.modelProfile) ? r.modelProfile : 'best';
   const p = PROFILES[profile];
   const encoder = (key: string, kind: 'embed' | 'rerank'): EncoderModel => ENCODERS[key] ?? { id: key, kind, mb: 0, pooling: 'mean', readme: true };
-  const llmKey = r.llmModel || DEFAULT_LLM;
   return {
     profile,
     embed: encoder(r.embedModel || p.embed, 'embed'),
     rerank: encoder(r.rerankModel || p.rerank, 'rerank'),
-    llm: !r.llm ? null : (LLMS[llmKey] ?? { uri: llmKey, file: llmKey.split(/[\\/]/).pop()!, mb: 0 }),
     poolSize: r.poolSize > 0 ? r.poolSize : p.poolSize,
     rerankPool: r.rerankPool > 0 ? r.rerankPool : p.rerankPool,
   };

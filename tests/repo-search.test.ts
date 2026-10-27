@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildQueries, extractTerms, fetchPool, type GitHubClient } from '../RepoRadar/headless/fetch.js';
+import { buildQueries, extractTerms, fetchPool, withLanguage, type GitHubClient } from '../RepoRadar/headless/fetch.js';
+import { expansionTopics } from '../RepoRadar/headless/search.js';
 import { rankCandidates, type RankCandidate } from '../RepoRadar/headless/rank.js';
 import { PROFILES, PROFILE_NAMES, REFERENCE, downloadMB, estimateSeconds, resolveModels } from '../server/src/models.js';
 
@@ -11,6 +12,16 @@ test('queries keep the words that matter and drop the ones every repository shar
   const t = extractTerms('Find me an app that converts PDF to txt/word');
   assert.deepEqual(t.keywords.slice(0, 3), ['pdf', 'text', 'docx']);
   assert.ok(t.phrases.includes('pdf to text') && t.phrases.includes('pdf to docx') && t.names.includes('pdf2docx'));
+  // A named language is a qualifier, and "library" never makes a query of its own.
+  const lib = buildQueries('python library to scrape websites', withLanguage('python library to scrape websites'));
+  assert.ok(lib.every((x) => x.includes('language:"python"') && !/^library/.test(x)) && lib.some((x) => x.includes('scraping')), lib.join(' | '));
+});
+
+test('the second fetch round searches the topics most shared by the best matches', () => {
+  const r = (sim: number, ...topics: string[]) => ({ sim, topics });
+  const scored = [r(0.9, 'web-scraping', 'python', 'crawler'), r(0.85, 'web-scraping', 'crawler'), r(0.8, 'web-scraping', 'hacktoberfest'), r(0.8, 'crawler', 'python'), r(0.2, 'react', 'react', 'react')];
+  assert.deepEqual(expansionTopics(scored, { count: 5, skip: [] }), ['web-scraping', 'crawler']);
+  assert.deepEqual(expansionTopics(scored, { count: 5, skip: ['crawler'] }), ['web-scraping']);
 });
 
 test('the pool drops archived repos and forks, removes duplicates and stops at poolSize', async () => {
@@ -55,11 +66,9 @@ test('established projects reach the cross-encoder even when many tiny repos mat
 
 test('profiles: bigger ones download more, settings override them, and the estimate scales with the probe', () => {
   assert.ok(PROFILE_NAMES.every((n, i) => i === 0 || downloadMB(n) > downloadMB(PROFILE_NAMES[i - 1]!)));
-  const r = resolveModels({ modelProfile: 'nope', embedModel: '', rerankModel: 'msmarco-l6', llmModel: 'C:\\m\\mine.gguf', llm: true, poolSize: 0, rerankPool: 0 });
+  const r = resolveModels({ modelProfile: 'nope', embedModel: '', rerankModel: 'msmarco-l6', poolSize: 0, rerankPool: 0 });
   assert.equal(r.profile, 'best');
   assert.equal(r.rerank.id, 'Xenova/ms-marco-MiniLM-L-6-v2');
-  assert.equal(r.llm!.file, 'mine.gguf');
-  assert.equal(resolveModels({ modelProfile: 'small', embedModel: '', rerankModel: '', llmModel: '', llm: false, poolSize: 0, rerankPool: 0 }).llm, null);
   assert.equal(r.poolSize, PROFILES.best.poolSize);
   const saved = { probe: REFERENCE.probeMs, timings: PROFILES.small.timings };
   REFERENCE.probeMs = 100;

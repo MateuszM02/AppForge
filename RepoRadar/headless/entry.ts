@@ -14,6 +14,7 @@ import { enrichRepo } from '@/lib/github/enrich';
 import { octokit } from '@/lib/github/client';
 import { deterministicScore } from '@/lib/scoring/deterministic';
 import { heuristicIntent } from '@/lib/llm/intent';
+import { buildReferenceContext } from '@/lib/search/referenceResolver';
 import type { SearchFilters } from '@/lib/types';
 
 if (process.env.APPFORGE_MODELS_DIR) {
@@ -37,6 +38,11 @@ export async function startSearch(prompt: string, filters: SearchFilters, settin
 }
 
 /** Status and (when finished) ranked results of a search, in RepoRadar's API shape. */
+/** "Alternative to X": the extra queries and X itself, as the pipeline gets them (for scripts/eval-search.mjs). */
+export async function reference(prompt: string) {
+  return buildReferenceContext(prompt).catch(() => null);
+}
+
 export async function getSearch(id: string) {
   const job = (await prisma.searchJob.findFirst({ where: { searchQueryId: id }, orderBy: { createdAt: 'desc' } })) as Record<string, unknown> | null;
   if (!job) return null;

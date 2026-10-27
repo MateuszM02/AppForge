@@ -148,7 +148,7 @@ SOFTWARE.
 
 ## node-llama-cpp (npm dependency)
 
-https://github.com/withcatai/node-llama-cpp (runs the Qwen3 rerankers and the optional LLM of repo_search)
+https://github.com/withcatai/node-llama-cpp (runs the Qwen3 rerankers of repo_search)
 
 ```
 MIT License
@@ -185,7 +185,6 @@ part of this repository, and each keeps its own licence:
 | [onnx-community/granite-embedding-small-english-r2-ONNX](https://huggingface.co/onnx-community/granite-embedding-small-english-r2-ONNX) | embedding (balanced, best) | Apache-2.0 |
 | [giladgd/Qwen3-Reranker-0.6B-GGUF](https://huggingface.co/giladgd/Qwen3-Reranker-0.6B-GGUF) | cross-encoder (small, balanced) | Apache-2.0 |
 | [giladgd/Qwen3-Reranker-4B-GGUF](https://huggingface.co/giladgd/Qwen3-Reranker-4B-GGUF) | cross-encoder (best) | Apache-2.0 |
-| [unsloth/Qwen3.5-4B-GGUF](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) | optional LLM filter (`repos.llm`) | Apache-2.0 |
 
 ## Skills and plugins indexed at run time
 

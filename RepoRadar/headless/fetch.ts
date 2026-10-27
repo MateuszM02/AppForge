@@ -25,15 +25,25 @@ const GENERIC = words(
     'conversion find get simple easy free way something file files document documents data basic small lightweight fast ' +
     'modern powerful awesome working support',
 );
-/** Platforms and languages narrow a search but never say what a repository does, so they never anchor one. */
-const MODIFIERS = words('cli gui web desktop mobile android ios linux windows macos self-hosted local cloud api plugin extension browser server python javascript typescript java go rust');
+/** Kinds of project, platforms and languages narrow a search but never say what a repository does, so they never anchor
+ * one ("library sort:stars" returned react and three.js for a scraping library). */
+export const ROLE_WORDS = words(
+  'library framework package module sdk toolkit component engine wrapper binding cli gui web desktop mobile android ios linux ' +
+    'windows macos self-hosted local cloud api plugin extension browser server python javascript typescript java go rust',
+);
+/** Languages named in a need become a language: qualifier (javascript also matches typescript, see qualifiersFor). */
+const LANGUAGES: Record<string, string> = {
+  python: 'python', javascript: 'javascript', typescript: 'typescript', java: 'java', go: 'go', golang: 'go', rust: 'rust', kotlin: 'kotlin',
+  swift: 'swift', ruby: 'ruby', php: 'php', 'c#': 'c#', csharp: 'c#', 'c++': 'c++', cpp: 'c++', dart: 'dart', elixir: 'elixir', scala: 'scala',
+  haskell: 'haskell', lua: 'lua', zig: 'zig',
+};
 /** Other spellings GitHub repositories use; the first is the most common. */
 const SYNONYMS: Record<string, string[]> = {
   txt: ['text', 'txt'], text: ['text', 'txt'], word: ['docx', 'word'], doc: ['docx', 'doc'], excel: ['xlsx', 'excel'],
   xls: ['xlsx', 'xls'], powerpoint: ['pptx', 'powerpoint'], ppt: ['pptx', 'ppt'], image: ['image', 'png'], photo: ['photo', 'image'],
   jpeg: ['jpg', 'jpeg'], video: ['video', 'mp4'], movie: ['video', 'movie'], audio: ['audio', 'mp3'], music: ['music', 'audio'],
   ebook: ['ebook', 'epub'], md: ['markdown'], email: ['email', 'mail'], k8s: ['kubernetes'], db: ['database'], todo: ['todo', 'task'],
-  scraping: ['scraper', 'scraping'], scraper: ['scraper', 'scraping'],
+  scraping: ['scraper', 'scraping'], scraper: ['scraper', 'scraping'], scrape: ['scraping', 'scraper'], crawl: ['crawler', 'crawling'],
 };
 
 /** Plural to singular ("trackers" -> "tracker"), the only change made to words that go into queries. */
@@ -85,14 +95,22 @@ export function extractTerms(need: string): NeedTerms {
     const next = tokens[i + 1];
     if (next && isContent(t) && isContent(next) && t !== next) phrases.add(`${t} ${next}`);
   });
-  const ranked = [...concepts.entries()].sort(([a], [b]) => Number(MODIFIERS.has(a)) - Number(MODIFIERS.has(b))).map(([, v]) => v);
+  const ranked = [...concepts.entries()].sort(([a], [b]) => Number(ROLE_WORDS.has(a)) - Number(ROLE_WORDS.has(b))).map(([, v]) => v);
   return { concepts: ranked, keywords: ranked.map((c) => c[0]!), phrases: [...phrases], names: [...names] };
 }
 
-/** Search qualifiers for the tool's filters (repeated license: qualifiers are OR-ed by GitHub). */
+/** The filters with the language the need names ("python library to ...") when the tool's filters set none. */
+export function withLanguage(need: string, f: SearchFilters = {}): SearchFilters {
+  if (f.language) return f;
+  const named = need.toLowerCase().match(/[\p{L}\p{N}+#]+/gu)?.find((t) => LANGUAGES[t]);
+  return named ? { ...f, language: LANGUAGES[named] } : f;
+}
+
+/** Search qualifiers for the tool's filters (repeated language: and license: qualifiers are OR-ed by GitHub). */
 export function qualifiersFor(f: SearchFilters = {}, now = new Date()): string {
   const q = ['archived:false'];
-  if (f.language) q.push(`language:"${f.language.trim().toLowerCase()}"`);
+  const lang = f.language?.trim().toLowerCase();
+  if (lang) q.push(...(lang === 'javascript' ? ['javascript', 'typescript'] : [lang]).map((l) => `language:"${l}"`));
   for (const l of f.license ?? []) q.push(`license:${l.trim().toLowerCase()}`);
   if (f.minStars) q.push(`stars:>=${Math.floor(f.minStars)}`);
   if (f.pushedWithinDays) q.push(`pushed:>=${new Date(now.getTime() - f.pushedWithinDays * 86_400_000).toISOString().slice(0, 10)}`);
@@ -104,7 +122,10 @@ const or = (terms: string[]) => terms.slice(0, 6).join(' OR ');
 
 /** About 6-12 queries, highest signal first, each with the filter qualifiers; empty when no searchable word is left. */
 export function buildQueries(need: string, filters: SearchFilters = {}): string[] {
-  const { concepts, phrases, names } = extractTerms(need);
+  const lang = filters.language?.trim().toLowerCase();
+  const { phrases, names, ...terms } = extractTerms(need);
+  // The language is a qualifier already, so it does not also go into the words.
+  const concepts = terms.concepts.filter((c) => !lang || LANGUAGES[c[0]!] !== lang);
   if (!concepts.length) return [];
   const [anchor, ...others] = concepts as [string[], ...string[][]];
   const raw = [
@@ -198,7 +219,7 @@ const cursorAt = (offset: number) => (offset ? Buffer.from(`cursor:${offset}`).t
  * first page of every query, then all the further pages needed for `poolSize`, lowest pages first. Archived repos
  * and forks are dropped. The pool is ordered by page, then query, so it does not depend on which call returned first.
  */
-export async function fetchPool(queries: string[], o: { poolSize: number; concurrency?: number }, deps: { client: GitHubClient }) {
+export async function fetchPool(queries: string[], o: { poolSize: number; concurrency?: number; pages?: number }, deps: { client: GitHubClient }) {
   const started = Date.now();
   const pages: Candidate[][][] = queries.map(() => []);
   const totals = queries.map(() => 0);
@@ -222,7 +243,7 @@ export async function fetchPool(queries: string[], o: { poolSize: number; concur
   // Further pages, breadth first, until the results (duplicates across queries counted, about a third) cover the pool.
   const more: [number, number][] = [];
   let expected = pages.reduce((t, p) => t + (p[0]?.length ?? 0), 0);
-  for (let page = 1; page < 10 && expected < o.poolSize * 1.5; page++) {
+  for (let page = 1; page < (o.pages ?? 10) && expected < o.poolSize * 1.5; page++) {
     for (let i = 0; i < queries.length && expected < o.poolSize * 1.5; i++) {
       if (totals[i]! > page * 100) {
         more.push([i, page]);
