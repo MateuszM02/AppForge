@@ -29,6 +29,7 @@ export interface SearchSettings {
   minSimilarity: number;
   rerankPool: number;
   minRerankScore: number;
+  rerankWeight: number;
   finalists: number;
   /** Unload the GGUF reranker after this many idle minutes. */
   modelIdleMinutes: number;

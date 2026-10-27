@@ -191,6 +191,7 @@ setting can also be an environment variable `APPFORGE_<SECTION>_<KEY>` (e.g. `AP
 | `repos.waitSeconds` | 40 | how long `repo_search` waits before returning a job id |
 | `repos.modelProfile` | best | `small`, `balanced` or `best` (set by `appforge setup models`) |
 | `repos.minRerankScore` | 0.01 | never show a repo the cross-encoder rates below this, however popular |
+| `repos.rerankWeight` | 0.15 | the cross-encoder's share of the final score (the rest is popularity); fitted to the Qwen3 rerankers |
 | `repos.modelIdleMinutes` | 10 | unload the GGUF reranker after this much idle time |
 | `updateCheck` | true | look for a newer AppForge at start |
 

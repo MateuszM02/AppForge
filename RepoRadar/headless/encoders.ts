@@ -191,7 +191,9 @@ async function ggufRank(file: string, query: string, docs: string[]): Promise<nu
     const cut = (t: string, n: number) => { const tokens = r.model.tokenize(t); return tokens.length <= n ? t : r.model.detokenize(tokens.slice(0, n)); };
     try {
       const [q, d] = [cut(query, RERANK_QUERY_TOKENS), docs.map((x) => cut(x, RERANK_DOC_TOKENS))];
-      if (process.env.APPFORGE_RERANK_PREFIX !== 'off' && docs.length > 1) {
+      // Only for decoder rerankers with a template (Qwen3): an encoder such as bge-reranker-v2-m3 must read the query
+      // and the document together.
+      if (process.env.APPFORGE_RERANK_PREFIX !== 'off' && docs.length > 1 && r.context._template != null) {
         try {
           return await rankSharedPrefix(r.context, q, d);
         } catch (e) {

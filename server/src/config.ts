@@ -80,6 +80,9 @@ export const DEFAULTS = {
      * (0.01 removed the unrelated famous repos from the results and none of the expected ones on the test set). */
     minSimilarity: 0.2,
     minRerankScore: 0.01,
+    /** The cross-encoder's share of the final score; the rest is popularity (0.5), credibility and recency. 0.15 was
+     * fitted to the Qwen3 rerankers, which rate unrelated repos near 0 and related ones near 1. */
+    rerankWeight: 0.15,
     /** How many repos the search returns. */
     finalists: 10,
     /** Unload the GGUF reranker after this many idle minutes to free its memory. */

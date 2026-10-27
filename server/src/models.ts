@@ -28,6 +28,8 @@ export const ENCODERS: Record<string, EncoderModel> = {
   // ms-marco (the reranker of AppForge 0.1) stays listed so `appforge setup models` can remove its files.
   'msmarco-l6': { id: 'Xenova/ms-marco-MiniLM-L-6-v2', kind: 'rerank', mb: 23, readme: true },
   'qwen3-rerank-0.6b': { id: 'Qwen3-Reranker-0.6B', kind: 'rerank', mb: 639, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf', file: 'Qwen3-Reranker-0.6B.Q8_0.gguf' } },
+  // Under test (Oct 2026): 0.63 vs Qwen3-0.6B's 0.61 on 20 prompts with rerankWeight 1.0, 3.8 s per 150 repos on the CPU.
+  'gte-rerank-modernbert': { id: 'Alibaba-NLP/gte-reranker-modernbert-base', kind: 'rerank', mb: 151, readme: false },
   'qwen3-rerank-4b': { id: 'Qwen3-Reranker-4B', kind: 'rerank', mb: 2497, readme: false, gguf: { uri: 'hf:giladgd/Qwen3-Reranker-4B-GGUF/Qwen3-Reranker-4B.Q4_K_M.gguf', file: 'Qwen3-Reranker-4B.Q4_K_M.gguf' } },
 };
 

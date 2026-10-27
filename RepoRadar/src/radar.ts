@@ -57,6 +57,7 @@ export interface SearchSettings {
   minSimilarity: number;
   rerankPool: number;
   minRerankScore: number;
+  rerankWeight: number;
   finalists: number;
   /** Unload the GGUF reranker after this many idle minutes. */
   modelIdleMinutes: number;
@@ -107,6 +108,7 @@ export function searchSettings(): SearchSettings {
     minSimilarity: c.minSimilarity,
     rerankPool: m.rerankPool,
     minRerankScore: c.minRerankScore,
+    rerankWeight: c.rerankWeight,
     finalists: c.finalists,
     modelIdleMinutes: c.modelIdleMinutes,
     cacheDir: paths.cache,

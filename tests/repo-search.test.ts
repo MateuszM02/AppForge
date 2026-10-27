@@ -53,7 +53,7 @@ const deps = {
 
 test('stage 2 drops repos below the similarity floor, stage 3 the low cross-encoder scores, best first', async () => {
   const pool = [repo('a/pdf-to-text', 'PDF to text and docx'), repo('b/images-to-pdf', 'images into a PDF'), repo('c/gif', 'gif maker'), repo('e/pdf-docx', 'PDF to docx', 50)];
-  const { ranked, stats } = await rankCandidates('pdf to text or docx', pool, { minSimilarity: 0.3, rerankPool: 3, minRerankScore: 0.4, finalists: 2 }, deps);
+  const { ranked, stats } = await rankCandidates('pdf to text or docx', pool, { minSimilarity: 0.3, rerankPool: 3, minRerankScore: 0.4, rerankWeight: 0.15, finalists: 2 }, deps);
   assert.equal(stats.belowSimilarity, 1);
   assert.equal(stats.belowRerankScore, 1, 'images-to-pdf shares only "pdf" with the need');
   assert.deepEqual(ranked.map((r) => r.candidate.fullName), ['a/pdf-to-text', 'e/pdf-docx']);
@@ -62,7 +62,7 @@ test('stage 2 drops repos below the similarity floor, stage 3 the low cross-enco
 test('established projects reach the cross-encoder even when many tiny repos match the words more literally', async () => {
   const tiny = Array.from({ length: 30 }, (_, i) => repo(`u${i}/habit-tracker`, 'habit habit habit', 0));
   const famous = repo('isoron/uhabits', 'Loop: keep long-term positive habit routines', 10_000);
-  const { stats } = await rankCandidates('habit', [...tiny, famous], { minSimilarity: 0.1, rerankPool: 9, minRerankScore: 0, finalists: 5 }, deps);
+  const { stats } = await rankCandidates('habit', [...tiny, famous], { minSimilarity: 0.1, rerankPool: 9, minRerankScore: 0, rerankWeight: 0.15, finalists: 5 }, deps);
   assert.ok(stats.shortlist.includes('isoron/uhabits'));
 });
 
