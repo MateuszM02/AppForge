@@ -27,7 +27,23 @@ const crossEncoders = new Map<string, Promise<{ tok: any; model: any }>>();
 // or auto (the default): the GPU only where it measured faster. Embedding 2,000 repos took 1.3 s on a Radeon RX 6800
 // (batches of 128) against 2.0 s on 16 CPU cores; the cross-encoders have no fp16 build and score 150 repos in about
 // 1.6 s on the CPU, so they stay there.
-const GPU = process.platform === 'win32' ? 'dml' : process.platform === 'linux' && process.arch === 'x64' ? 'cuda' : null;
+let GPU: string | null = process.platform === 'win32' ? 'dml' : process.platform === 'linux' && process.arch === 'x64' ? 'cuda' : null;
+
+// Token limits. Each model is told how much text the task needs, never its own maximum (granite-embedding-r2 reads
+// 8,192 tokens, Qwen3-Reranker 32k): a repo's text is its name, description (300 characters) and topics, about 100
+// tokens in English but several hundred in CJK or emoji, and batch memory grows with the longest text in the batch.
+const EMBED_TOKENS = 256;
+const RERANK_QUERY_TOKENS = 256;
+const RERANK_DOC_TOKENS = 1024;
+const RERANK_CONTEXT = 2048; // query + doc + Qwen3-Reranker's instruction template (about 100 tokens)
+
+/** Runs GPU work one call at a time, so two searches never hold two batches in video memory at once. */
+let gpuQueue: Promise<unknown> = Promise.resolve();
+function serial<T>(fn: () => Promise<T>): Promise<T> {
+  const run = gpuQueue.then(fn);
+  gpuQueue = run.catch(() => undefined);
+  return run;
+}
 
 /** Loads on the GPU (fp16) when wanted and possible, else on the CPU (int8); a GPU that fails to load falls back. */
 async function onDevice<T>(spec: EncoderSpec, gpuHelps: boolean, load: (o: { device: any; dtype: any }) => Promise<T>): Promise<{ model: T; gpu: boolean }> {
@@ -53,24 +69,39 @@ function extractor(spec: EncoderSpec): Promise<{ model: Extractor; gpu: boolean 
   const key = `${spec.id}|${spec.dtype ?? 'q8'}`;
   let p = extractors.get(key);
   if (!p) {
-    p = onDevice(spec, GPU_HELPS.embed, (o) => pipeline('feature-extraction', spec.id, o) as unknown as Promise<Extractor>);
+    p = onDevice(spec, GPU_HELPS.embed, async (o) => {
+      const pipe: any = await pipeline('feature-extraction', spec.id, o);
+      pipe.tokenizer.model_max_length = EMBED_TOKENS; // the pipeline truncates to this
+      return pipe as Extractor;
+    });
     p.catch(() => extractors.delete(key));
     extractors.set(key, p);
   }
   return p;
 }
 
-/** Normalized embedding vectors (batches of 32 on the CPU, 128 on a GPU, the faster size on each). */
+/** Normalized embedding vectors (batches of 32 on the CPU, 128 on a GPU, the faster size on each). Texts are batched
+ * by length, so a batch pads to similar lengths; a GPU that fails mid-run (out of memory) hands over to the CPU. */
 export async function embed(spec: EncoderSpec, texts: string[], batch?: number): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
   const { model: run, gpu } = await extractor(spec);
   const batchSize = batch ?? (gpu ? 128 : 32);
-  const out: Float32Array[] = [];
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const chunk = texts.slice(i, i + batchSize).map((t) => t.slice(0, 2000));
-    const res = await run(chunk, { pooling: spec.pooling ?? 'mean', normalize: true });
-    const dim = res.dims.at(-1)!;
-    for (let k = 0; k < chunk.length; k++) out.push(res.data.slice(k * dim, (k + 1) * dim));
+  const order = texts.map((t, i) => ({ t: t.slice(0, 2000), i })).sort((a, b) => a.t.length - b.t.length);
+  const out: Float32Array[] = new Array(texts.length);
+  try {
+    for (let i = 0; i < order.length; i += batchSize) {
+      const chunk = order.slice(i, i + batchSize);
+      const res = await (gpu ? serial : (f: () => any) => f())(() => run(chunk.map((x) => x.t), { pooling: spec.pooling ?? 'mean', normalize: true }));
+      const dim = res.dims.at(-1)!;
+      chunk.forEach((x, k) => (out[x.i] = res.data.slice(k * dim, (k + 1) * dim)));
+    }
+  } catch (e) {
+    if (!gpu) throw e;
+    process.stderr.write(`[encoders] ${spec.id} failed on the GPU (${e instanceof Error ? e.message.slice(0, 200) : e}); using the CPU from now on
+`);
+    GPU = null;
+    extractors.clear();
+    return embed(spec, texts, batch);
   }
   return out;
 }
@@ -89,23 +120,43 @@ function crossEncoder(spec: EncoderSpec) {
   return p;
 }
 
-/** Relevance of each doc to the query in (0,1): the sigmoid of the cross-encoder's logit. */
-const rankers = new Map<string, Promise<any>>();
+/** GGUF rerankers by file. */
+const rankers = new Map<string, Promise<{ model: any; context: any; timer?: NodeJS.Timeout }>>();
 
-/** A GGUF reranker's ranking context, loaded once per file. */
-function ggufRanker(file: string): Promise<any> {
+/** A GGUF reranker and its ranking context, loaded once per file and unloaded like the LLM after APPFORGE_LLM_IDLE_MS. */
+function ggufRanker(file: string): Promise<{ model: any; context: any; timer?: NodeJS.Timeout }> {
   let p = rankers.get(file);
   if (!p) {
-    p = llamaRuntime().then(async (engine) => (await engine.loadModel({ modelPath: file })).createRankingContext({ contextSize: 2048 }));
+    p = llamaRuntime().then(async (engine) => {
+      const model = await engine.loadModel({ modelPath: file });
+      return { model, context: await model.createRankingContext({ contextSize: RERANK_CONTEXT, batchSize: RERANK_CONTEXT }) };
+    });
     p.catch(() => rankers.delete(file));
     rankers.set(file, p);
   }
   return p;
 }
 
+async function ggufRank(file: string, query: string, docs: string[]): Promise<number[]> {
+  return serial(async () => {
+    const r = await ggufRanker(file);
+    clearTimeout(r.timer);
+    const cut = (t: string, n: number) => { const tokens = r.model.tokenize(t); return tokens.length <= n ? t : r.model.detokenize(tokens.slice(0, n)); };
+    try {
+      return await r.context.rankAll(cut(query, RERANK_QUERY_TOKENS), docs.map((d) => cut(d, RERANK_DOC_TOKENS)));
+    } finally {
+      r.timer = setTimeout(() => {
+        rankers.delete(file);
+        void r.context.dispose().then(() => r.model.dispose()).catch(() => undefined);
+      }, Number(process.env.APPFORGE_LLM_IDLE_MS) || 600_000).unref();
+    }
+  });
+}
+
+/** Relevance of each doc to the query: the sigmoid of the cross-encoder's logit, or the GGUF reranker's score. */
 export async function rerank(spec: EncoderSpec, query: string, docs: string[], batchSize = 8): Promise<number[]> {
   if (docs.length === 0) return [];
-  if (spec.gguf) return (await ggufRanker(spec.gguf)).rankAll(query, docs);
+  if (spec.gguf) return ggufRank(spec.gguf, query, docs);
   const { tok, model } = await crossEncoder(spec);
   const out: number[] = [];
   for (let i = 0; i < docs.length; i += batchSize) {

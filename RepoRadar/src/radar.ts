@@ -119,8 +119,8 @@ export function searchSettings(): SearchSettings {
     rerankPool: m.rerankPool,
     minRerankScore: c.minRerankScore,
     finalists: c.finalists,
-    llm: c.llm,
-    llmModelPath: llmPath(m.llm),
+    llm: c.llm && m.llm !== null,
+    llmModelPath: m.llm && llmPath(m.llm),
     llmTimeoutSeconds: c.llmTimeoutSeconds,
     llmIdleMinutes: c.llmIdleMinutes,
     cacheDir: paths.cache,
@@ -164,9 +164,9 @@ export async function prefetchModels(profile?: string): Promise<string[]> {
     await resolveModelFile(m.rerank.gguf.uri, { directory: path.join(paths.models, 'rerank'), fileName: m.rerank.gguf.file, cli: process.stderr.isTTY === true });
   }
   await enc.warm(spec(m.rerank), 'rerank');
-  if (!llmPath(m.llm)) {
+  if (m.llm && !llmPath(m.llm)) {
     const { resolveModelFile } = await import('node-llama-cpp');
     await resolveModelFile(m.llm.uri, { directory: path.join(paths.models, 'llm'), fileName: m.llm.file, cli: process.stderr.isTTY === true });
   }
-  return [m.embed.id, m.rerank.gguf?.file ?? m.rerank.id, m.llm.file];
+  return [m.embed.id, m.rerank.gguf?.file ?? m.rerank.id, ...(m.llm ? [m.llm.file] : [])];
 }

@@ -37,7 +37,6 @@ async function unload(): Promise<void> {
   await model.dispose().catch(() => undefined);
 }
 
-/** Loads the model, on the GPU when node-llama-cpp finds a usable one (Vulkan, CUDA, Metal), else on the CPU. */
 /** node-llama-cpp's engine, shared with the GGUF rerankers (encoders.ts): the GPU when it finds a usable one, else the CPU. */
 export function llamaRuntime(): Promise<any> {
   // Prebuilt binaries only (the package's install script is off); stdout belongs to the MCP transport.
@@ -60,7 +59,9 @@ async function load(modelPath: string) {
     await unload();
     if (!fs.existsSync(modelPath)) throw new Error(`Local LLM model not found: ${modelPath} (run \`appforge setup models\`).`);
     const model = await engine.loadModel({ modelPath });
-    const context = await model.createContext({ contextSize: { min: 8192, max: 12288 } });
+    // A fixed window, not the model's own (Qwen3.5 reads 262k tokens): the listwise request of 10 finalists (900-character
+    // README excerpts) is about 5,000 tokens in English, more in CJK, plus an answer of up to 3,000; memory is reserved up front.
+    const context = await model.createContext({ contextSize: 12288 });
     // One sequence for the model's lifetime: it keeps the evaluated prompt, so the same system prompt is not read again.
     loaded = { path: modelPath, model, context, sequence: context.getSequence() };
   }

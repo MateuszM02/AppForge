@@ -68,7 +68,7 @@ export const DEFAULTS = {
   repos: {
     /** repo_search waits this long for results, then returns a job id to poll with repo_search_result. */
     waitSeconds: 40,
-    /** Which local models rank results: small, balanced or best (see `appforge setup models`). */
+    /** Which local models rank results: minimalist, small, balanced or best (see `appforge setup models`). */
     modelProfile: 'best',
     /** Override the profile's models: a key from server/src/models.ts, a Hugging Face id, or (LLM) a GGUF path. */
     embedModel: '',

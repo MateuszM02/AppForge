@@ -41,8 +41,9 @@ The one command above does everything, without administrator rights:
    (if any) is not touched.
 3. Installs the dependencies and builds AppForge.
 4. Downloads the **Camoufox** browser (~300 MB) and the repo-search models. It asks for a profile and shows each
-   one's size and estimated search time on your computer: **small** 1.9 GB, **balanced** 3.5 GB or **best** 5.3 GB
-   (Enter = best; a GPU makes the local LLM much faster). `APPFORGE_MODELS=small|balanced|best` answers without
+   one's size, memory needs and estimated search time on your computer: **minimalist** 0.7 GB (no LLM),
+   **small** 1.9 GB, **balanced** 3.5 GB or **best** 5.3 GB
+   (Enter = best; a GPU makes the local LLM much faster). `APPFORGE_MODELS=minimalist|small|balanced|best` answers without
    asking, `APPFORGE_MINIMAL=1` skips the downloads (`appforge setup` later), and `appforge setup models` switches.
 5. Adds the `appforge` command and registers the MCP server in **VS Code** (and VS Code Insiders) and
    **Claude Code**, when they are installed.

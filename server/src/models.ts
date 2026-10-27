@@ -48,8 +48,8 @@ export const LLMS: Record<string, LlmModel> = {
   'qwen3.5-4b': { uri: 'hf:unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_K_M.gguf', file: 'Qwen3.5-4B-Q4_K_M.gguf', mb: 2741 },
 };
 
-export type ProfileName = 'small' | 'balanced' | 'best';
-export const PROFILE_NAMES: ProfileName[] = ['small', 'balanced', 'best'];
+export type ProfileName = 'minimalist' | 'small' | 'balanced' | 'best';
+export const PROFILE_NAMES: ProfileName[] = ['minimalist', 'small', 'balanced', 'best'];
 
 /** Seconds per search on the reference machine, split by what they depend on: GitHub, the encoders (CPU), the LLM. */
 export interface Timings {
@@ -59,10 +59,20 @@ export interface Timings {
   llmCpu: number;
 }
 
+/** What a profile needs: free RAM to run on the CPU alone, and the video memory that holds all its models and their
+ * (fixed) context windows at once, so that each runs on the GPU. Less video memory still works: node-llama-cpp keeps
+ * the layers that do not fit on the CPU, and the search gets slower. Estimated from the files and context sizes; the
+ * best profile peaked at 6.9 GB of RAM (model files mapped into memory included) on the reference machine. */
+export interface Hardware {
+  ramGB: number;
+  vramGB: number;
+}
+
 export interface Profile {
   embed: string;
   rerank: string;
-  llm: string;
+  /** null: no LLM pick, the results stay in the cross-encoder's order. */
+  llm: string | null;
   /** Candidates fetched (about 500 already hold almost every must-have answer of the test set) and how many of them
    * the cross-encoder reads: 150 ranked as well as 300 on the test set, in half the time. */
   poolSize: number;
@@ -71,12 +81,14 @@ export interface Profile {
    * search, built from measured parts: GitHub, encoders (embedding + reranker), LLM pick with 10 finalists. */
   quality: number | null;
   timings: Timings | null;
+  hardware: Hardware;
 }
 
 export const PROFILES: Record<ProfileName, Profile> = {
-  small: { embed: 'minilm', rerank: 'qwen3-rerank-0.6b', llm: 'qwen3.5-2b', poolSize: 500, rerankPool: 150, quality: null, timings: { github: 13, encoders: 10.5, llmGpu: 17, llmCpu: 61 } },
-  balanced: { embed: 'granite-small', rerank: 'qwen3-rerank-0.6b', llm: 'qwen3.5-4b', poolSize: 1000, rerankPool: 150, quality: null, timings: { github: 19, encoders: 14.5, llmGpu: 25, llmCpu: 260 } },
-  best: { embed: 'granite-small', rerank: 'qwen3-rerank-4b', llm: 'qwen3.5-4b', poolSize: 2000, rerankPool: 150, quality: null, timings: { github: 20, encoders: 29, llmGpu: 25, llmCpu: 260 } },
+  minimalist: { embed: 'minilm', rerank: 'qwen3-rerank-0.6b', llm: null, poolSize: 500, rerankPool: 150, quality: null, timings: { github: 13, encoders: 10.5, llmGpu: 0, llmCpu: 0 }, hardware: { ramGB: 4, vramGB: 2 } },
+  small: { embed: 'minilm', rerank: 'qwen3-rerank-0.6b', llm: 'qwen3.5-2b', poolSize: 500, rerankPool: 150, quality: null, timings: { github: 13, encoders: 10.5, llmGpu: 17, llmCpu: 61 }, hardware: { ramGB: 6, vramGB: 4 } },
+  balanced: { embed: 'granite-small', rerank: 'qwen3-rerank-0.6b', llm: 'qwen3.5-4b', poolSize: 1000, rerankPool: 150, quality: null, timings: { github: 19, encoders: 14.5, llmGpu: 25, llmCpu: 260 }, hardware: { ramGB: 8, vramGB: 6 } },
+  best: { embed: 'granite-small', rerank: 'qwen3-rerank-4b', llm: 'qwen3.5-4b', poolSize: 2000, rerankPool: 150, quality: 0.49, timings: { github: 20, encoders: 29, llmGpu: 25, llmCpu: 260 }, hardware: { ramGB: 12, vramGB: 8 } },
 };
 
 export const isProfile = (name: string): name is ProfileName => (PROFILE_NAMES as string[]).includes(name);
@@ -91,13 +103,16 @@ export function resolveModels(r: { modelProfile: string; embedModel: string; rer
     profile,
     embed: encoder(r.embedModel || p.embed, 'embed'),
     rerank: encoder(r.rerankModel || p.rerank, 'rerank'),
-    llm: LLMS[llmKey] ?? { uri: llmKey, file: llmKey.split(/[\\/]/).pop()!, mb: 0 },
+    llm: !llmKey ? null : (LLMS[llmKey] ?? { uri: llmKey, file: llmKey.split(/[\\/]/).pop()!, mb: 0 }),
     poolSize: r.poolSize > 0 ? r.poolSize : p.poolSize,
     rerankPool: r.rerankPool > 0 ? r.rerankPool : p.rerankPool,
   };
 }
 
-export const downloadMB = (name: ProfileName) => ENCODERS[PROFILES[name].embed]!.mb + ENCODERS[PROFILES[name].rerank]!.mb + LLMS[PROFILES[name].llm]!.mb;
+export const downloadMB = (name: ProfileName) => {
+  const p = PROFILES[name];
+  return ENCODERS[p.embed]!.mb + ENCODERS[p.rerank]!.mb + (p.llm ? LLMS[p.llm]!.mb : 0);
+};
 
 /** The reference machine of the timings, and its result on probeMs(). */
 export const REFERENCE = { probeMs: 35, machine: 'Ryzen 9 5950X with a Radeon RX 6800 (Vulkan)' };

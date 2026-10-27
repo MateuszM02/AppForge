@@ -58,7 +58,8 @@ test('profiles: bigger ones download more, settings override them, and the estim
   const r = resolveModels({ modelProfile: 'nope', embedModel: '', rerankModel: 'msmarco-l6', llmModel: 'C:\\m\\mine.gguf', poolSize: 0, rerankPool: 0 });
   assert.equal(r.profile, 'best');
   assert.equal(r.rerank.id, 'Xenova/ms-marco-MiniLM-L-6-v2');
-  assert.equal(r.llm.file, 'mine.gguf');
+  assert.equal(r.llm!.file, 'mine.gguf');
+  assert.equal(resolveModels({ ...r, modelProfile: 'minimalist', embedModel: '', rerankModel: '', llmModel: '' }).llm, null);
   assert.equal(r.poolSize, PROFILES.best.poolSize);
   const saved = { probe: REFERENCE.probeMs, timings: PROFILES.small.timings };
   REFERENCE.probeMs = 100;

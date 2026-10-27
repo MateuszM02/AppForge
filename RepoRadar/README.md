@@ -22,13 +22,16 @@ LLM, upstream log lines → stderr.
 
 ## Model profiles
 
-`appforge setup models [small|balanced|best]` (also asked by the installer, Enter = best) picks the three models:
+`appforge setup models [minimalist|small|balanced|best]` (also asked by the installer, Enter = best) picks the models.
+RAM is the free memory a profile needs; GPU memory holds all its models and their fixed context windows on the GPU
+(less works, the layers that do not fit run on the CPU; no GPU works too, slower):
 
-| Profile | Download | Embedding | Cross-encoder | LLM | Pool / K |
-|---|---|---|---|---|---|
-| small | 1.9 GB | all-MiniLM-L6-v2 | Qwen3-Reranker-0.6B | Qwen3.5-2B | 500 / 150 |
-| balanced | 3.5 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-0.6B | Qwen3.5-4B | 1,000 / 150 |
-| best | 5.3 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-4B | Qwen3.5-4B | 2,000 / 150 |
+| Profile | Download | RAM / GPU memory | Embedding | Cross-encoder | LLM | Pool / K |
+|---|---|---|---|---|---|---|
+| minimalist | 0.7 GB | 4 / 2 GB | all-MiniLM-L6-v2 | Qwen3-Reranker-0.6B | none (cross-encoder order) | 500 / 150 |
+| small | 1.9 GB | 6 / 4 GB | all-MiniLM-L6-v2 | Qwen3-Reranker-0.6B | Qwen3.5-2B | 500 / 150 |
+| balanced | 3.5 GB | 8 / 6 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-0.6B | Qwen3.5-4B | 1,000 / 150 |
+| best | 5.3 GB | 12 / 8 GB | granite-embedding-small-english-r2 | Qwen3-Reranker-4B | Qwen3.5-4B | 2,000 / 150 |
 
 Chosen with `node scripts/eval-search.mjs` (tests/search-gold.json) and fixed candidate pools of its 10 prompts:
 

@@ -56,7 +56,7 @@ export function formatStats(st: RadarStats): string {
   const r = st.rank;
   const llm = {
     used: `the local LLM picked the final list${st.llmDropped ? ` and dropped ${st.llmDropped} as off-topic` : ''}`,
-    off: 'the LLM pick is off (repos.llm), so this is the cross-encoder order',
+    off: 'the LLM pick is off (the minimalist profile, or repos.llm), so this is the cross-encoder order',
     unavailable: 'the local LLM is not available (run `appforge setup models`), so this is the cross-encoder order',
     failed: 'the local LLM did not answer in time, so this is the cross-encoder order',
   }[st.llm];
