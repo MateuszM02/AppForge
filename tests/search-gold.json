@@ -1,5 +1,5 @@
 {
-  "_comment": "Gold set for repo_search quality (scripts/eval-search.mjs), in RepoRadar's format (RepoRadar/upstream/scripts/eval/gold.json). fullNames are lowercased owner/repo. must_include = answers a good search finds; nice_to_have = also good; traps = look related but do not answer the need. Checked against GitHub on 2026-10-27 (20 prompts: apps, self-hosted, alternatives, libraries in several languages, CLIs, ML, devops).",
+  "_comment": "Gold set for repo_search quality (scripts/eval-search.mjs), in RepoRadar's format (RepoRadar/upstream/scripts/eval/gold.json). fullNames are lowercased owner/repo. must_include = answers a good search finds; nice_to_have = also good; traps = look related but do not answer the need. Checked against GitHub on 2026-10-30 (50 prompts: apps, self-hosted, alternatives, libraries in several languages, CLIs, ML, devops; many in plain, wordy phrasing).",
   "prompts": [
     { "prompt": "Find me an app that converts PDF to txt/word", "field": "documents", "complexity": "medium", "type": "capability", "must_include": [ "stirling-tools/stirling-pdf", "microsoft/markitdown", "artifexsoftware/pdf2docx", "pymupdf/pymupdf", "jsvine/pdfplumber" ], "nice_to_have": [ "pdfminer/pdfminer.six", "docling-project/docling", "datalab-to/marker", "opendatalab/mineru", "apache/tika", "py-pdf/pypdf", "unstructured-io/unstructured" ], "traps": [ "swati4star/images-to-pdf", "as-a-service/pdf", "pixelcog/gmail-to-pdf" ]
     },
@@ -37,9 +37,69 @@
     },
     { "prompt": "self-hosted RSS reader", "field": "selfhosted", "complexity": "simple", "type": "capability", "must_include": [ "freshrss/freshrss", "miniflux/v2" ], "nice_to_have": [ "nkanaev/yarr", "athou/commafeed", "nextcloud/news", "stringer-rss/stringer" ], "traps": [ "diygod/rsshub" ]
     },
-    { "prompt": "static site generator", "field": "web", "complexity": "simple", "type": "capability", "must_include": [ "gohugoio/hugo", "jekyll/jekyll", "11ty/buildawesome" ], "nice_to_have": [ "withastro/astro", "hexojs/hexo", "getzola/zola", "gatsbyjs/gatsby", "vuejs/vitepress", "facebook/docusaurus" ], "traps": []
+    { "prompt": "static site generator", "field": "web", "complexity": "simple", "type": "capability", "must_include": [ "gohugoio/hugo", "jekyll/jekyll", "11ty/buildawesome" ], "nice_to_have": [ "withastro/astro", "hexojs/hexo", "getzola/zola", "gatsbyjs/gatsby", "vuejs/vitepress", "meta/docusaurus" ], "traps": []
     },
     { "prompt": "vector database for embeddings", "field": "database", "complexity": "medium", "type": "capability", "must_include": [ "milvus-io/milvus", "qdrant/qdrant", "weaviate/weaviate" ], "nice_to_have": [ "chroma-core/chroma", "lancedb/lancedb", "facebookresearch/faiss", "pgvector/pgvector", "vespa-engine/vespa" ], "traps": []
+    },
+    { "prompt": "I need something like Zapier but self-hosted, to automate workflows between my apps", "field": "automation", "complexity": "long", "type": "alternative", "must_include": [ "n8n-io/n8n", "activepieces/activepieces", "huginn/huginn" ], "nice_to_have": [ "automatisch/automatisch", "windmill-labs/windmill", "node-red/node-red", "kestra-io/kestra" ], "traps": []
+    },
+    { "prompt": "repository that keeps track of the best LLMs and embedding models, like a leaderboard", "field": "ml", "complexity": "long", "type": "capability", "must_include": [ "embeddings-benchmark/mteb", "open-compass/opencompass" ], "nice_to_have": [ "eleutherai/lm-evaluation-harness", "hannibal046/awesome-llm", "lmarena/arena-hard-auto", "tatsu-lab/alpaca_eval" ], "traps": []
+    },
+    { "prompt": "a tool to keep track of my personal finances and budget that I can host myself", "field": "finance", "complexity": "long", "type": "capability", "must_include": [ "firefly-iii/firefly-iii", "actualbudget/actual" ], "nice_to_have": [ "beancount/fava", "beancount/beancount" ], "traps": []
+    },
+    { "prompt": "block ads on my whole home network", "field": "network", "complexity": "medium", "type": "capability", "must_include": [ "pi-hole/pi-hole", "adguardteam/adguardhome" ], "nice_to_have": [ "0xerr0r/blocky", "technitiumsoftware/dnsserver" ], "traps": []
+    },
+    { "prompt": "I want to run large language models locally on my laptop", "field": "ml", "complexity": "medium", "type": "capability", "must_include": [ "ollama/ollama", "ggml-org/llama.cpp" ], "nice_to_have": [ "nomic-ai/gpt4all", "janhq/jan", "oobabooga/textgen", "mozilla-ai/llamafile" ], "traps": []
+    },
+    { "prompt": "rust library to make HTTP requests", "field": "library", "complexity": "short", "type": "capability", "must_include": [ "seanmonstar/reqwest" ], "nice_to_have": [ "algesten/ureq", "hyperium/hyper", "http-rs/surf" ], "traps": []
+    },
+    { "prompt": "open source alternative to Photoshop", "field": "media", "complexity": "short", "type": "alternative", "must_include": [ "graphiteeditor/graphite", "pintaproject/pinta", "viliusle/minipaint" ], "nice_to_have": [ "kde/krita", "gnome/gimp", "diolinux/photogimp" ], "traps": []
+    },
+    { "prompt": "dotfiles manager to sync my config files between machines", "field": "cli", "complexity": "medium", "type": "capability", "must_include": [ "twpayne/chezmoi", "anishathalye/dotbot" ], "nice_to_have": [ "yadm-dev/yadm", "lra/mackup", "thoughtbot/rcm" ], "traps": []
+    },
+    { "prompt": "self-hosted media server to stream my movie collection", "field": "selfhosted", "complexity": "medium", "type": "capability", "must_include": [ "jellyfin/jellyfin" ], "nice_to_have": [ "xbmc/xbmc", "mediacms-io/mediacms" ], "traps": [ "owncast/owncast" ]
+    },
+    { "prompt": "python library for dataframes that is faster than pandas", "field": "library", "complexity": "medium", "type": "capability", "must_include": [ "pola-rs/polars" ], "nice_to_have": [ "duckdb/duckdb", "modin-project/modin", "vaexio/vaex", "ibis-project/ibis", "nvidia/cudf" ], "traps": []
+    },
+    { "prompt": "screenshot tool for linux", "field": "desktop", "complexity": "short", "type": "capability", "must_include": [ "flameshot-org/flameshot" ], "nice_to_have": [ "ksnip/ksnip", "shutter-project/shutter" ], "traps": []
+    },
+    { "prompt": "I'm looking for a markdown-based documentation site generator for my project's docs", "field": "web", "complexity": "long", "type": "capability", "must_include": [ "meta/docusaurus", "squidfunk/mkdocs-material", "vuejs/vitepress" ], "nice_to_have": [ "mkdocs/mkdocs", "rust-lang/mdbook", "sphinx-doc/sphinx", "docsifyjs/docsify" ], "traps": []
+    },
+    { "prompt": "javascript library for drag and drop sortable lists", "field": "library", "complexity": "medium", "type": "capability", "must_include": [ "sortablejs/sortable", "clauderic/dnd-kit" ], "nice_to_have": [ "react-dnd/react-dnd", "bevacqua/dragula", "hello-pangea/dnd" ], "traps": []
+    },
+    { "prompt": "browser extension that blocks trackers and ads", "field": "privacy", "complexity": "medium", "type": "capability", "must_include": [ "gorhill/ublock" ], "nice_to_have": [ "efforg/privacybadger", "ghostery/ghostery-extension", "adguardteam/adguardbrowserextension" ], "traps": []
+    },
+    { "prompt": "ORM for TypeScript", "field": "library", "complexity": "short", "type": "capability", "must_include": [ "prisma/orm", "typeorm/typeorm", "drizzle-team/drizzle-orm" ], "nice_to_have": [ "mikro-orm/mikro-orm", "sequelize/sequelize", "kysely-org/kysely" ], "traps": []
+    },
+    { "prompt": "tool to install and switch between multiple Node.js versions", "field": "devtools", "complexity": "medium", "type": "capability", "must_include": [ "nvm-sh/nvm", "schniz/fnm", "volta-cli/volta" ], "nice_to_have": [ "tj/n", "jdx/mise", "asdf-vm/asdf" ], "traps": []
+    },
+    { "prompt": "self-hosted team chat like Slack", "field": "selfhosted", "complexity": "medium", "type": "alternative", "must_include": [ "mattermost/mattermost", "rocketchat/rocket.chat", "zulip/zulip" ], "nice_to_have": [ "element-hq/element-web", "element-hq/synapse" ], "traps": []
+    },
+    { "prompt": "command line tool for load testing an HTTP server", "field": "devtools", "complexity": "medium", "type": "capability", "must_include": [ "grafana/k6", "wg/wrk", "rakyll/hey" ], "nice_to_have": [ "tsenart/vegeta", "locustio/locust", "mcollina/autocannon", "apache/jmeter" ], "traps": []
+    },
+    { "prompt": "machine learning library for gradient boosting", "field": "ml", "complexity": "medium", "type": "capability", "must_include": [ "dmlc/xgboost", "lightgbm-org/lightgbm", "catboost/catboost" ], "nice_to_have": [ "scikit-learn/scikit-learn" ], "traps": []
+    },
+    { "prompt": "git client with a nice terminal user interface", "field": "cli", "complexity": "medium", "type": "capability", "must_include": [ "jesseduffield/lazygit", "gitui-org/gitui", "jonas/tig" ], "nice_to_have": [], "traps": []
+    },
+    { "prompt": "OCR library to extract text from images", "field": "ml", "complexity": "medium", "type": "capability", "must_include": [ "tesseract-ocr/tesseract", "paddlepaddle/paddleocr", "jaidedai/easyocr" ], "nice_to_have": [ "mindee/doctr", "naptha/tesseract.js", "hiroi-sora/umi-ocr" ], "traps": []
+    },
+    { "prompt": "self-hosted wiki for our team's documentation", "field": "selfhosted", "complexity": "medium", "type": "capability", "must_include": [ "requarks/wiki", "bookstackapp/bookstack", "outline/outline" ], "nice_to_have": [ "docmost/docmost", "dokuwiki/dokuwiki", "gollum/gollum" ], "traps": []
+    },
+    { "prompt": "a faster alternative to grep for searching through code", "field": "cli", "complexity": "medium", "type": "alternative", "must_include": [ "burntsushi/ripgrep", "ggreer/the_silver_searcher" ], "nice_to_have": [ "beyondgrep/ack3", "ast-grep/ast-grep" ], "traps": []
+    },
+    { "prompt": "home automation platform I can run on my own server", "field": "iot", "complexity": "medium", "type": "capability", "must_include": [ "home-assistant/core", "openhab/openhab-core" ], "nice_to_have": [ "node-red/node-red", "domoticz/domoticz", "esphome/esphome", "homebridge/homebridge" ], "traps": []
+    },
+    { "prompt": "framework for building desktop apps with web technologies", "field": "desktop", "complexity": "medium", "type": "capability", "must_include": [ "electron/electron", "tauri-apps/tauri" ], "nice_to_have": [ "nwjs/nw.js", "neutralinojs/neutralinojs", "wailsapp/wails" ], "traps": []
+    },
+    { "prompt": "build mobile apps for iOS and Android from one codebase, an alternative to React Native", "field": "mobile", "complexity": "long", "type": "alternative", "must_include": [ "flutter/flutter", "ionic-team/capacitor" ], "nice_to_have": [ "nativescript/nativescript", "dotnet/maui", "jetbrains/compose-multiplatform" ], "traps": []
+    },
+    { "prompt": "convert web pages to PDF from the command line", "field": "documents", "complexity": "medium", "type": "capability", "must_include": [ "gotenberg/gotenberg", "kozea/weasyprint", "puppeteer/puppeteer" ], "nice_to_have": [ "microsoft/playwright" ], "traps": []
+    },
+    { "prompt": "open source time tracking app for freelancers", "field": "productivity", "complexity": "medium", "type": "capability", "must_include": [ "kimai/kimai", "solidtime-io/solidtime" ], "nice_to_have": [ "activitywatch/activitywatch", "almarklein/timetagger", "traggo/server" ], "traps": []
+    },
+    { "prompt": "self-hosted recipe manager and meal planner", "field": "personal", "complexity": "medium", "type": "capability", "must_include": [ "tandoorrecipes/recipes", "mealie-recipes/mealie" ], "nice_to_have": [ "grocy/grocy" ], "traps": []
+    },
+    { "prompt": "e-book reader app that supports EPUB", "field": "media", "complexity": "medium", "type": "capability", "must_include": [ "koreader/koreader", "johnfactotum/foliate", "kovidgoyal/calibre" ], "nice_to_have": [ "readest/readest", "edrlab/thorium-reader" ], "traps": []
     }
   ]
 }

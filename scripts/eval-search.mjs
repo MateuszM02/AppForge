@@ -5,6 +5,7 @@
 //   node scripts/eval-search.mjs --profiles small,balanced,best --prompts pdf,habit --tag x   KEY=VALUE = env
 //   --parallel 3   searches at once (the default): one's GitHub fetch overlaps another's reranking
 //   --fresh        ignore the caches (to measure real seconds per search)
+//   --no-judge     skip the precision judges (below)
 // The evidence step (releases, issues) does not change the order and is not run; `node scripts/smoke.mjs repos` covers
 // the whole tool. Caches and the report go to <data folder>/cache/eval/. Needs `npm run build` and a GitHub login.
 
@@ -18,10 +19,11 @@ const say = (line) => process.stdout.write(`${line}\n`);
 console.log = console.info = (...a) => process.stderr.write(`${a.join(' ')}\n`);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const imp = (p) => import(pathToFileURL(path.join(root, p)).href);
-const opts = { tag: 'run', prompts: '', profiles: 'best', parallel: '3', fresh: false };
+const opts = { tag: 'run', prompts: '', profiles: 'best', parallel: '3', fresh: false, judge: true };
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
   if (a === '--fresh') opts.fresh = true;
+  else if (a === '--no-judge') opts.judge = false;
   else if (a.startsWith('--')) opts[a.slice(2)] = process.argv[++i];
   else if (a.includes('=')) process.env[a.slice(0, a.indexOf('='))] = a.slice(a.indexOf('=') + 1);
 }
@@ -85,6 +87,26 @@ const items = gold.filter((p) => !want.length || want.some((w) => p.prompt.toLow
 const r = await radar();
 const lc = (s) => s.toLowerCase();
 const spec = (m) => ({ id: m.id, pooling: m.pooling, readme: m.readme, gguf: rerankPath(m), yes: m.yes });
+const { ENCODERS } = await imp('dist/server/src/models.js');
+
+// Precision judges: nDCG counts only the labelled answers, so unrelated repos in the other slots go unnoticed (raw gte
+// let a quarter in at a higher nDCG). Two rerankers from different families score each result (prompt against name,
+// description and topics), as each favours its own family; "on" and "off" are their on-topic and off-topic levels.
+const JUDGES = [
+  { name: 'qwen3-4b', model: ENCODERS['qwen3-rerank-4b'], on: 0.5, off: 0.01 },
+  { name: 'zerank-2', model: ENCODERS['zerank-2'], on: 0.5, off: 0.1 },
+].filter((j) => opts.judge && fs.existsSync(rerankPath(j.model)));
+if (opts.judge && JUDGES.length < 2) say('(a judge model is missing: run with APPFORGE_REPOS_RERANKMODEL=qwen3-rerank-4b / zerank-2 `appforge setup models`)');
+const { repoText } = await imp('dist/RepoRadar/headless/rank.js');
+async function judged(prompt, candidates) {
+  const out = {};
+  for (const j of JUDGES) {
+    const docs = candidates.map(repoText);
+    const s = docs.length ? await cached(`judge-${key(j.name, prompt, ...docs)}.json`, () => enc.rerank(spec(j.model), prompt, docs)) : [];
+    out[j.name] = { on: s.filter((x) => x >= j.on).length, off: s.filter((x) => x < j.off).length };
+  }
+  return out;
+}
 
 async function evaluate(profile, item) {
   const c = loadConfig().repos;
@@ -110,6 +132,7 @@ async function evaluate(profile, item) {
     top10: all.size ? names.filter((n) => all.has(lc(n))).length / all.size : 0,
     ceil10: best(names), ceil150: best(found.rank.shortlist),
     deepest: Math.max(...names.map((n) => found.rank.shortlist.indexOf(n))),
+    judge: await judged(item.prompt, found.ranked.map((x) => x.candidate)),
     results: names.length, poolSize: found.candidates.length, queries: found.queries, topics: found.topics, expansion: found.expansion, seconds: (Date.now() - started) / 1000, top: names,
   };
 }
@@ -135,10 +158,17 @@ const summary = profiles.map((p) => {
   const rs = rows.filter((x) => x.profile === p);
   const nd = rs.map((x) => x.ndcg).sort((a, b) => a - b);
   const sd = Math.sqrt(avg(nd.map((x) => (x - avg(nd)) ** 2)));
-  return { profile: p, ndcg: avg(nd), median: nd[Math.floor(nd.length / 2)], worst: nd[0], stdev: sd, must: avg(rs.map((x) => x.must)), pool: avg(rs.map((x) => x.pool)), short: avg(rs.map((x) => x.short)), top10: avg(rs.map((x) => x.top10)), ceil10: avg(rs.map((x) => x.ceil10)), ceil150: avg(rs.map((x) => x.ceil150)), traps: rs.reduce((n, x) => n + x.traps, 0), results: avg(rs.map((x) => x.results)), failed: rs.filter((x) => x.error).length };
+  const share = (j, k) => rs.reduce((n, x) => n + (x.judge?.[j]?.[k] ?? 0), 0) / (rs.reduce((n, x) => n + x.results, 0) || 1);
+  const judges = Object.fromEntries(JUDGES.map((j) => [j.name, { on: share(j.name, 'on'), off: share(j.name, 'off') }]));
+  const noisy = rs.filter((x) => JUDGES.some((j) => (x.judge?.[j.name]?.off ?? 0) >= 3)).length;
+  return { profile: p, judges, noisy, ndcg: avg(nd), median: nd[Math.floor(nd.length / 2)], worst: nd[0], stdev: sd, must: avg(rs.map((x) => x.must)), pool: avg(rs.map((x) => x.pool)), short: avg(rs.map((x) => x.short)), top10: avg(rs.map((x) => x.top10)), ceil10: avg(rs.map((x) => x.ceil10)), ceil150: avg(rs.map((x) => x.ceil150)), traps: rs.reduce((n, x) => n + x.traps, 0), results: avg(rs.map((x) => x.results)), failed: rs.filter((x) => x.error).length };
 });
 say('\nprofile    nDCG  median worst stdev | must  pool  short top10 | ceil10 ceil150 | traps results failed');
 for (const x of summary) say(`${x.profile.padEnd(9)}  ${f2(x.ndcg)}  ${f2(x.median)}   ${f2(x.worst)}  ${f2(x.stdev)} | ${f2(x.must)}  ${f2(x.pool)}  ${f2(x.short)}  ${f2(x.top10)} |  ${f2(x.ceil10)}   ${f2(x.ceil150)} |  ${String(x.traps).padStart(3)}  ${x.results.toFixed(1).padStart(6)}  ${x.failed}`);
+if (JUDGES.length) {
+  say('\nprecision: share of results each judge rates on-topic / off-topic, and prompts with 3+ off-topic results by either');
+  for (const x of summary) say(`${x.profile.padEnd(9)}  ${JUDGES.map((j) => `${j.name} ${(x.judges[j.name].on * 100).toFixed(0)}% / ${(x.judges[j.name].off * 100).toFixed(0)}%`).join('   ')}   noisy prompts ${x.noisy}`);
+}
 say(`\nnDCG per prompt (${profiles.join(' / ')}):`);
 for (const it of items) say(`  ${it.prompt.slice(0, 50).padEnd(50)} ${profiles.map((p) => f2(rows.find((x) => x.profile === p && x.prompt === it.prompt)?.ndcg ?? 0)).join('  ')}`);
 const file = path.join(realData, 'cache', 'eval', `${opts.tag}.json`);
