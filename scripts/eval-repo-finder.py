@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Offline tuning for the repo-finder skill's search.py (agensi/repo-finder) on tests/search-gold.json.
+"""Offline tuning for the repo-finder skill's search.py (agensi/repo-finder) on tests/search-gold.json
+(or another gold file with --gold, such as tests/search-gold-niche.json).
 
   python scripts/eval-repo-finder.py [--fetch] [--pool 2500] [--variants "base 3000:junk=true,prf_terms=12"]
                                      [--k 60,100,150,300] [--split even|odd|all]
@@ -31,6 +32,7 @@ def data_dir():
 
 
 CACHE = os.path.join(data_dir(), "cache", "eval", "repo-finder")
+POOLS = os.path.join(CACHE, "pools")  # one folder of fetched pools per gold file
 real_gh = search.gh
 
 
@@ -58,7 +60,7 @@ def args_for(need, **kw):
 
 
 def fetch(i, item, pool):
-    f = os.path.join(CACHE, "pools", f"{i:02d}.json")
+    f = os.path.join(POOLS, f"{i:02d}.json")
     if os.path.exists(f):
         return
     a = args_for(item["prompt"], pool=pool)
@@ -93,6 +95,7 @@ def lines_of(item, nodes, limit, names, pool_size, tune):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fetch", action="store_true")
+    ap.add_argument("--gold", default=os.path.join(ROOT, "tests", "search-gold.json"))
     ap.add_argument("--pool", type=int, default=2500)
     ap.add_argument("--variants", default="base", help='space-separated: base, or "<pool>:key=value,..." (search.TUNE)')
     ap.add_argument("--k", default="60,100,150,300")
@@ -100,8 +103,11 @@ def main():
     ap.add_argument("--split", default="even", choices=["even", "odd", "all"])
     a = ap.parse_args()
     os.makedirs(os.path.join(CACHE, "gh"), exist_ok=True)
-    os.makedirs(os.path.join(CACHE, "pools"), exist_ok=True)
-    gold = json.load(open(os.path.join(ROOT, "tests", "search-gold.json"), encoding="utf-8"))["prompts"]
+    global POOLS
+    stem = os.path.splitext(os.path.basename(a.gold))[0]
+    POOLS = os.path.join(CACHE, "pools" if stem == "search-gold" else "pools-" + stem)
+    os.makedirs(POOLS, exist_ok=True)
+    gold = json.load(open(a.gold, encoding="utf-8"))["prompts"]
     if a.fetch:
         with ThreadPoolExecutor(3) as ex:
             list(ex.map(lambda j: fetch(j, gold[j], a.pool), range(len(gold))))
@@ -113,7 +119,7 @@ def main():
         rec = {k: [] for k in ks}; must = {k: [] for k in ks}; pool_r, chars, dropped = [], {k: [] for k in ks}, 0
         for i in idx:
             item = gold[i]
-            nodes = json.load(open(os.path.join(CACHE, "pools", f"{i:02d}.json"), encoding="utf-8"))["pool"]
+            nodes = json.load(open(os.path.join(POOLS, f"{i:02d}.json"), encoding="utf-8"))["pool"]
             g = {x.lower() for x in item["must_include"] + item["nice_to_have"]}; m = {x.lower() for x in item["must_include"]}
             names = {n["nameWithOwner"].lower() for n in nodes[:pool_size]}
             pool_r.append(len(g & names) / len(g))

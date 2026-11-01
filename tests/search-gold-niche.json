@@ -1,0 +1,25 @@
+{
+  "_comment": "Narrower needs than search-gold.json, whose right projects are smaller or specialised, so a model's memory alone does less. Names verified on GitHub 2026-11-01 (yabai moved to asmvik/yabai). Used by scripts/eval-repo-finder.py --gold.",
+  "prompts": [
+    { "prompt": "automatically sync subtitles to the audio of a video", "field": "media", "type": "capability",
+      "must_include": ["smacke/ffsubsync", "kaegi/alass"], "nice_to_have": ["sc0ty/subsync"], "traps": [] },
+    { "prompt": "turn an epub ebook into an audiobook with text to speech", "field": "media", "type": "capability",
+      "must_include": ["p0n1/epub_to_audiobook", "santinic/audiblez", "drewthomasson/ebook2audiobook"], "nice_to_have": [], "traps": [] },
+    { "prompt": "remap keyboard keys on Linux at the system level", "field": "desktop", "type": "capability",
+      "must_include": ["rvaiya/keyd", "kmonad/kmonad", "xremap/xremap"], "nice_to_have": [], "traps": [] },
+    { "prompt": "see which process is using my network bandwidth in the terminal", "field": "devtools", "type": "capability",
+      "must_include": ["imsnif/bandwhich", "raboof/nethogs"], "nice_to_have": [], "traps": [] },
+    { "prompt": "make presentation slides from markdown and show them in the terminal", "field": "devtools", "type": "capability",
+      "must_include": ["maaslalani/slides", "mfontanini/presenterm", "visit1985/mdp"], "nice_to_have": [], "traps": [] },
+    { "prompt": "find and delete duplicate photos on my disk", "field": "files", "type": "capability",
+      "must_include": ["qarmin/czkawka", "arsenetar/dupeguru"], "nice_to_have": ["idealo/imagededup"], "traps": [] },
+    { "prompt": "tiling window manager for macOS", "field": "desktop", "type": "capability",
+      "must_include": ["asmvik/yabai", "nikitabobko/aerospace", "ianyh/amethyst"], "nice_to_have": [], "traps": [] },
+    { "prompt": "self-hosted bookmark manager to save and archive links", "field": "self-hosted", "type": "capability",
+      "must_include": ["linkwarden/linkwarden", "karakeep-app/karakeep", "sissbruecker/linkding"], "nice_to_have": ["go-shiori/shiori"], "traps": [] },
+    { "prompt": "read RSS feeds in the terminal", "field": "devtools", "type": "capability",
+      "must_include": ["newsboat/newsboat"], "nice_to_have": ["guyfedwards/nom", "typicalam/goread"], "traps": [] },
+    { "prompt": "self-hosted URL shortener", "field": "self-hosted", "type": "capability",
+      "must_include": ["shlinkio/shlink", "thedevs-network/kutt", "yourls/yourls"], "nice_to_have": ["cydrobolt/polr"], "traps": [] }
+  ]
+}

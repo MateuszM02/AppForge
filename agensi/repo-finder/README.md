@@ -14,12 +14,14 @@ server, just two Python scripts that use the GitHub CLI, while the agent itself 
 `api.github.com`, through `gh`; they read no environment variables or files and write nothing.
 
 **How good is it?** On AppForge's 50-need test set (2026-11-01), a search takes about 20 s and prints 300 candidates
-in about 5k tokens: 100 full lines, then 200 names and stars. Plain-Python filtering (no models) drops lists,
-tutorials and courses and ranks by word match plus words the best matches share; that holds 74% of the right projects
-against 72% for the earlier 300 full lines (12k tokens). With Sonnet judging the list in a clean context (no tools,
-no memory), the 25 needs held out from tuning scored 0.85 nDCG@10 against 0.83 before (better on 14, worse on 4) with
-150 full lines and 150 names (7k tokens; the 5k list holds the same projects and was not judged by a model again),
-and 0.88 against 0.81 for Sonnet answering from memory alone (10 needs). Most misses are famous
+in about 4k tokens: 60 full lines, then 240 names and stars. Plain-Python filtering (no models) drops lists,
+tutorials and courses and ranks by word match, words the best matches share, and how high each repo came in the
+6-15 GitHub searches (reciprocal rank fusion); that holds 76% of the right projects against 72% for the first
+version's 300 full lines (12k tokens). With Sonnet judging the list in a clean context (no tools, no memory), the 25
+needs held out from tuning scored 0.85 nDCG@10 against 0.83 for the first version, and 0.88 against 0.81 for Sonnet
+answering from memory alone (10 needs). On 10 narrower needs (tests/search-gold-niche.json in AppForge), Haiku with
+this list scored 0.86 against 0.89 with 150 full lines and 150 names, within run-to-run noise (± 0.11), on 37% fewer
+input tokens (9.6k against 15.2k). Most misses are famous
 projects whose own words differ from the need, which the agent adds from its own knowledge. AppForge itself adds
 local embedding and reranking models (0.2-2.6 GB) for agents that cannot read 300 lines.
 

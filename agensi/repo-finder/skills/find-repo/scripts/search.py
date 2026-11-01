@@ -3,7 +3,7 @@
 judge. Python 3.8+ standard library only; GitHub access goes through the GitHub CLI (run `gh auth login` once).
 
   python search.py "self-hosted alternative to Notion" [--language Go] [--license MIT] [--min-stars 50]
-                   [--pushed-within 365] [--limit 100] [--names 200] [--pool 1000]
+                   [--pushed-within 365] [--limit 60] [--names 240] [--pool 1000]
 
 The need becomes 6-15 GitHub searches, plus a second round on topics the best matches share; lists and tutorials are
 dropped and the rest ranked by word match, GitHub's order and popularity.
@@ -180,13 +180,15 @@ def fetch_pages(jobs):
 
 
 def pool_of(results, queries, size):
-    """Deduplicated repos ordered by page, then query (GitHub's own order), without archived repos and forks."""
+    """Deduplicated repos ordered by page, then query (GitHub's own order), without archived repos and forks; `_rrf`
+    sums 1 / (60 + position) over the searches that returned the repo (reciprocal rank fusion)."""
     pool = {}
     for page in range(10):
         for q in queries:
-            for n in (results.get((q, page)) or (0, []))[1]:
+            for j, n in enumerate((results.get((q, page)) or (0, []))[1]):
                 if n and n.get("nameWithOwner") and not n["isArchived"] and not n["isFork"]:
-                    pool.setdefault(n["nameWithOwner"].lower(), n)
+                    n = pool.setdefault(n["nameWithOwner"].lower(), n)
+                    n["_rrf"] = n.get("_rrf", 0) + 1 / (60 + page * 100 + j)
     return list(pool.values())[:size]
 
 
@@ -204,7 +206,7 @@ def words_of(t):
 
 
 # Ranking settings, tuned offline on AppForge's 50 test needs (scripts/eval-repo-finder.py there).
-TUNE = {"junk": True, "prf_docs": 50, "prf_terms": 12, "prf_weight": 0.4, "starred": 3}
+TUNE = {"junk": True, "prf_docs": 50, "prf_terms": 12, "prf_weight": 0.4, "starred": 3, "rrf": 0.5}
 JUNK_NAME = re.compile(r"^awesome|\d+[-_]days|(^|[-_.])(tutorials?|courses?|homework|assignments?|dotfiles|examples?|"
                        r"demos?|starter|boilerplate|interview|cheatsheet|roadmap|notes|learn|learning|study)([-_.]|$)")
 JUNK_TEXT = re.compile(r"\b(curated list|awesome list|a list of|collection of (resources|links|tools)|tutorials? (for|on)|"
@@ -251,10 +253,13 @@ def rank(pool, terms, small=False, need=""):
     clamp = lambda x: max(0.0, min(1.0, x))
     prom = lambda n: 0.8 if small else clamp(math.log10(n["stargazerCount"] + 1) / 5)
     cred = lambda n: 1 if small else clamp(math.log10(n["stargazerCount"] + 2 * n["forkCount"] + 1) / 2.2)
+    rrf_top = max((n.get("_rrf", 0) for n in pool), default=0) or 1
+    r = TUNE.get("rrf", 0)
+    pos = lambda i, n: r * n.get("_rrf", 0) / rrf_top + (1 - r) * (1 - i / len(pool))
     def blend(query):
         bm = [bm25(d, query) for d in docs]
         top = max(bm, default=0) or 1
-        return sorted(((0.35 * b / top + 0.3 * (1 - i / len(pool)) + 0.2 * prom(n) + 0.15 * cred(n), b, i)
+        return sorted(((0.35 * b / top + 0.3 * pos(i, n) + 0.2 * prom(n) + 0.15 * cred(n), b, i)
                        for i, (b, n) in enumerate(zip(bm, pool))), key=lambda x: -x[0])
     scored = blend(q)
     if TUNE["prf_terms"]:
@@ -285,8 +290,8 @@ def parser():
     ap.add_argument("--min-stars", type=int)
     ap.add_argument("--pushed-within", type=int, help="days")
     ap.add_argument("--small", action="store_true", help="little-known projects: no popularity bonus")
-    ap.add_argument("--limit", type=int, default=100, help="full lines")
-    ap.add_argument("--names", type=int, default=200, help="further repos as names and stars only")
+    ap.add_argument("--limit", type=int, default=60, help="full lines")
+    ap.add_argument("--names", type=int, default=240, help="further repos as names and stars only")
     ap.add_argument("--pool", type=int, default=1000)
     return ap
 
@@ -304,11 +309,11 @@ def collect(a, terms):
         sys.exit("No searchable words in the need; describe what the project should do.")
     first = fetch_pages([(x, 0) for x in queries])
     # Round 2: topics shared by the 30 best matches so far (scrapy for "scrape", logseq for "Notion").
-    best = [n for _, _, n in rank(pool_of(first, queries, a.pool), terms, a.small)[:30]]
+    best = [n for _, _, n in rank(pool_of(first, queries, a.pool), terms, a.small, a.need)[:30]]
     seen = {t.replace("-", "") for t in topics + terms["keywords"]}
     counts = {}
     for n in best:
-        for t in {x["topic"]["name"] for x in (n.get("repositoryTopics") or {}).get("nodes", [])}:
+        for t in set(topic_names(n)):
             if t.replace("-", "") not in seen and t not in NOISE_TOPICS | BROAD_TOPICS and t not in ROLE and t not in LANGUAGES:
                 counts[t] = counts.get(t, 0) + 1
     expansion = [t for t, c in sorted(counts.items(), key=lambda kv: -kv[1]) if c >= 3][:5]
@@ -361,10 +366,7 @@ def main():
     terms = extract_terms(a.need)
     pool, searches, searched = collect(a, terms)
     shown = select(pool, terms, a)
-    print(f"Need: {a.need}")
-    print(f"{len(pool)} repositories from {searches} GitHub searches; topics searched: {', '.join(searched) or 'none'}. "
-          f"Lists, tutorials and courses left out. Best word match and popularity first, then the most-starred that "
-          f"match a word.")
+    print(f"Need: {a.need}\n{len(pool)} repositories from {searches} GitHub searches (topics: {', '.join(searched) or 'none'}).")
     print(render(shown, a.limit))
 
 
