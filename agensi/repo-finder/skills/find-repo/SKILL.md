@@ -38,6 +38,9 @@ it. Judge each candidate by what it does (description, topics, your own knowledg
 
 - Famous projects often describe themselves vaguely ("A black hole for Internet advertisements" is Pi-hole, a
   network-wide ad blocker). Keep a project you know fits, wherever it is in the list.
+- GitHub's word search misses about one right project in five, often the best-known one (Vaultwarden, Chart.js,
+  Ollama, Polars, nvm). Add well-known projects you are sure fit even when they are not listed, and check that
+  they exist and are maintained with the check-repo skill.
 - Drop look-alikes that do something else: the wrong direction (images to PDF when the user wants PDF to text),
   a plugin for another product, a library when the user wants an app or the other way round.
 - Drop curated lists, tutorials, courses, examples and dotfiles unless the user asked for them.
