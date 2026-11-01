@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
-"""Search GitHub for open-source projects that do what a need describes, and print about 300 candidates for the
-agent to judge. Python 3.8+ standard library only; GitHub access goes through the GitHub CLI (run `gh auth login` once).
+"""Search GitHub for open-source projects that do what a need describes, and print 300 candidates for the agent to
+judge. Python 3.8+ standard library only; GitHub access goes through the GitHub CLI (run `gh auth login` once).
 
   python search.py "self-hosted alternative to Notion" [--language Go] [--license MIT] [--min-stars 50]
-                   [--pushed-within 365] [--limit 300] [--pool 1000]
+                   [--pushed-within 365] [--limit 150] [--names 150] [--pool 1000]
 
-How: the need becomes 6-15 GitHub searches (its specific words, "X to Y" phrases, GitHub topics named like it), paged
-in parallel into a pool of up to --pool repositories; a second round searches the topics shared by the best matches
-so far. The pool is ranked by word match (BM25 over name, description and topics) blended with popularity, a third of
-the places go to the most-starred repos that match at least one word, and the top --limit are printed. Word match
-misses projects described in other words, which is why the agent reads 300 lines rather than 30: on 50 test needs
-that kept 94% of the right projects that GitHub returned, against 64% for the top 60.
+The need becomes 6-15 GitHub searches, plus a second round on topics the best matches share; lists and tutorials are
+dropped and the rest ranked by word match, GitHub's order and popularity.
 """
 import argparse, base64, datetime, json, math, re, shutil, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
@@ -154,8 +150,7 @@ def discover_topics(terms, need_tokens):
         for items in ex.map(one, terms["keywords"][:4]):
             for t in items:
                 words = {singular(w) for w in t["name"].split("-")}
-                # Every word of the topic comes from the need (rss-reader, block-ads), so it says what the need says;
-                # one-word topics are as broad as the plain word searches that already run.
+                # Multi-word topics made only of the need's words (rss-reader, block-ads) say what the need says.
                 if len(words) > 1 and words <= need_tokens and t["name"] not in NOISE_TOPICS and t["name"] not in BROAD_TOPICS and not words <= ROLE:
                     found[t["name"]] = max(found.get(t["name"], 0), len(words) + (1 if t.get("curated") or t.get("featured") else 0))
     return [n for n, _ in sorted(found.items(), key=lambda kv: -kv[1])[:5]]
@@ -167,9 +162,8 @@ SEARCH = """search(query: %s, type: REPOSITORY, first: 100%s) { repositoryCount 
 
 
 def fetch_pages(jobs):
-    """jobs: (query, page), one GraphQL search each (several per call time out), ten at a time, one retry; a page that
-    still fails is skipped. GitHub's search cursors are an encoded offset, so every page can be asked for at once.
-    Returns {(query, page): (count, nodes)}."""
+    """jobs: (query, page), one GraphQL search each, ten at a time, one retry. GitHub's search cursors are an encoded
+    offset, so every page can be asked for at once. Returns {(query, page): (count, nodes)}."""
     def run(job):
         q, page = job
         after = ', after: "%s"' % base64.b64encode(f"cursor:{page * 100}".encode()).decode() if page else ""
@@ -209,42 +203,81 @@ def words_of(t):
     return [stem(w) for w in re.findall(r"[a-z0-9+#.]{2,}", (t or "").lower())]
 
 
-def rank(pool, terms, small=False):
-    """BM25 over name (twice), description and topics, blended with GitHub's position and popularity; a third of the
-    places go to the most-starred repos that match at least one word, as known projects often describe themselves
-    vaguely."""
-    q = {stem(w) for c in terms["concepts"] for t in c for w in re.split(r"[\s-]+", t)}
+# Ranking settings, tuned offline on AppForge's 50 test needs (scripts/eval-repo-finder.py there).
+TUNE = {"junk": True, "prf_docs": 50, "prf_terms": 12, "prf_weight": 0.4, "starred": 3}
+JUNK_NAME = re.compile(r"^awesome|\d+[-_]days|(^|[-_.])(tutorials?|courses?|homework|assignments?|dotfiles|examples?|"
+                       r"demos?|starter|boilerplate|interview|cheatsheet|roadmap|notes|learn|learning|study)([-_.]|$)")
+JUNK_TEXT = re.compile(r"\b(curated list|awesome list|a list of|collection of (resources|links|tools)|tutorials? (for|on)|"
+                       r"course (on|for)|homework|my (notes|dotfiles))\b")
+
+
+def topic_names(n):
+    return [t["topic"]["name"] for t in (n.get("repositoryTopics") or {}).get("nodes", [])]
+
+
+def junk(n, need):
+    """Lists, tutorials, courses, dotfiles, unless the need asks for them."""
+    name, text = n["nameWithOwner"].split("/")[1].lower(), (n.get("description") or "").lower()
+    if not text and n["stargazerCount"] < 20:
+        return True
+    hit = JUNK_NAME.search(name) or JUNK_TEXT.search(text) or {"awesome", "awesome-list", "tutorial", "course"} & set(topic_names(n))
+    return bool(hit) and not re.search(r"awesome|list|tutorial|course|example|learn|starter|boilerplate|template|"
+                                       r"dotfile|track|resource|collection", need.lower())
+
+
+def rank(pool, terms, small=False, need=""):
+    """BM25 over name (twice), description and topics, plus words the best matches share, blended with GitHub's
+    order and popularity."""
+    if TUNE["junk"]:
+        pool = [n for n in pool if not junk(n, need)]
+    q = {stem(w): 1.0 for c in terms["concepts"] for t in c for w in re.split(r"[\s-]+", t)}
     docs = []
     for n in pool:
         name = words_of(n["nameWithOwner"].split("/")[1].replace("-", " ").replace("_", " "))
-        topics = [w for t in (n.get("repositoryTopics") or {}).get("nodes", []) for w in t["topic"]["name"].split("-")]
-        docs.append(name + name + words_of(n.get("description")) + [stem(w) for w in topics])
+        docs.append(name + name + words_of(n.get("description")) + [stem(w) for t in topic_names(n) for w in t.split("-")])
     avg = sum(map(len, docs)) / max(1, len(docs))
-    df = {t: sum(1 for d in docs if t in d) for t in q}
-    def bm25(d):
+    bags, df = [set(d) for d in docs], {}
+    for b in bags:
+        for t in b:
+            df[t] = df.get(t, 0) + 1
+    idf = lambda t: math.log(1 + (len(docs) - df.get(t, 0) + 0.5) / (df.get(t, 0) + 0.5))
+    def bm25(d, query):
         s = 0.0
-        for t in q:
+        for t, w in query.items():
             tf = d.count(t)
             if tf:
-                idf = math.log(1 + (len(docs) - df[t] + 0.5) / (df[t] + 0.5))
-                s += idf * tf * 2.2 / (tf + 1.2 * (0.25 + 0.75 * len(d) / avg))
+                s += w * idf(t) * tf * 2.2 / (tf + 1.2 * (0.25 + 0.75 * len(d) / avg))
         return s
-    bm = [bm25(d) for d in docs]
-    top = max(bm) or 1
     clamp = lambda x: max(0.0, min(1.0, x))
     prom = lambda n: 0.8 if small else clamp(math.log10(n["stargazerCount"] + 1) / 5)
     cred = lambda n: 1 if small else clamp(math.log10(n["stargazerCount"] + 2 * n["forkCount"] + 1) / 2.2)
-    scored = [(0.35 * b / top + 0.3 * (1 - i / len(pool)) + 0.2 * prom(n) + 0.15 * cred(n), b, n)
-              for i, (b, n) in enumerate(zip(bm, pool))]
-    scored.sort(key=lambda x: -x[0])
-    return scored
+    def blend(query):
+        bm = [bm25(d, query) for d in docs]
+        top = max(bm, default=0) or 1
+        return sorted(((0.35 * b / top + 0.3 * (1 - i / len(pool)) + 0.2 * prom(n) + 0.15 * cred(n), b, i)
+                       for i, (b, n) in enumerate(zip(bm, pool))), key=lambda x: -x[0])
+    scored = blend(q)
+    if TUNE["prf_terms"]:
+        # Words the best matches share that the need does not use (vault and keepass for "password manager").
+        best = [x for x in scored[: TUNE["prf_docs"]] if x[1] > 0]
+        weight = {}
+        for s, _, i in best:
+            for t in bags[i]:
+                if t not in q and len(t) > 2 and t not in STOPWORDS and singular(t) not in GENERIC and not t.isdigit():
+                    weight[t] = weight.get(t, 0) + s
+        common = [t for t in weight if sum(1 for _, _, i in best if t in bags[i]) >= 3]
+        common = sorted(common, key=lambda t: -weight[t] * idf(t))[: TUNE["prf_terms"]]
+        if common:
+            hi = max(weight[t] * idf(t) for t in common)
+            scored = blend({**q, **{t: TUNE["prf_weight"] * weight[t] * idf(t) / hi for t in common}})
+    return [(s, b, pool[i]) for s, b, i in scored]
 
 
 def stars(n):
     return f"{n / 1000:.1f}k" if n >= 1000 else str(n)
 
 
-def main():
+def parser():
     ap = argparse.ArgumentParser(description="Find open-source projects on GitHub by what they do.")
     ap.add_argument("need", help="what the project should do, in plain words")
     ap.add_argument("--language")
@@ -252,16 +285,14 @@ def main():
     ap.add_argument("--min-stars", type=int)
     ap.add_argument("--pushed-within", type=int, help="days")
     ap.add_argument("--small", action="store_true", help="little-known projects: no popularity bonus")
-    ap.add_argument("--limit", type=int, default=300)
+    ap.add_argument("--limit", type=int, default=150, help="full lines")
+    ap.add_argument("--names", type=int, default=150, help="further repos as names and stars only")
     ap.add_argument("--pool", type=int, default=1000)
-    a = ap.parse_args()
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # descriptions carry emoji; Windows consoles default to cp125x
-    if not GH:
-        sys.exit("The GitHub CLI is needed: install it from https://cli.github.com and run `gh auth login`.")
-    if not a.language:
-        named = next((LANGUAGES[t] for t in re.findall(r"[\w+#]+", a.need.lower()) if t in LANGUAGES), None)
-        a.language = named
-    terms = extract_terms(a.need)
+    return ap
+
+
+def collect(a, terms):
+    """All the GitHub searches for a need: returns (pool, searches run, topics searched)."""
     need_tokens = {singular(w) for w in re.findall(r"[\w+#]+", a.need.lower())} | {s for c in terms["concepts"] for s in c}
     try:
         topics = discover_topics(terms, need_tokens)
@@ -272,8 +303,7 @@ def main():
     if not queries:
         sys.exit("No searchable words in the need; describe what the project should do.")
     first = fetch_pages([(x, 0) for x in queries])
-    # Round 2 starts from the first pages: topics shared by the 30 best matches so far, searched next to the further
-    # pages of round 1 (finds projects described in other words: scrapy for "scrape", logseq for "Notion").
+    # Round 2: topics shared by the 30 best matches so far (scrapy for "scrape", logseq for "Notion").
     best = [n for _, _, n in rank(pool_of(first, queries, a.pool), terms, a.small)[:30]]
     seen = {t.replace("-", "") for t in topics + terms["keywords"]}
     counts = {}
@@ -291,21 +321,51 @@ def main():
     round2 = [f"topic:{t} {q}" for t in expansion]
     results = dict(first)
     results.update(fetch_pages(more + [(x, 0) for x in round2]))
-    pool = pool_of(results, queries + round2, a.pool + 500)
-    scored = rank(pool, terms, a.small)
-    k = min(a.limit, len(scored))
-    head = scored[: k - k // 3]
-    starred = sorted((s for s in scored[k - k // 3:] if s[1] > 0), key=lambda s: -s[2]["stargazerCount"])[: k // 3]
-    print(f"Need: {a.need}")
-    print(f"{len(pool)} repositories from {len(queries) + len(round2)} GitHub searches; "
-          f"topics searched: {', '.join(topics + expansion) or 'none'}. The {len(head) + len(starred)} below: "
-          f"best word match and popularity first, then the most-starred that match at least one word.")
-    print("rank. owner/name | stars | language | licence | last push | description | topics")
-    for i, (_, _, n) in enumerate(head + starred, 1):
-        topics_n = ", ".join(x["topic"]["name"] for x in (n.get("repositoryTopics") or {}).get("nodes", [])[:3])
+    return pool_of(results, queries + round2, a.pool + 500), len(queries) + len(round2), topics + expansion
+
+
+def select(pool, terms, a):
+    """The --limit + --names repos to print: best match first, then the most-starred that match a word (famous
+    projects often describe themselves vaguely)."""
+    scored = rank(pool, terms, a.small, a.need)
+    k = min(a.limit + a.names, len(scored))
+    share = k // TUNE["starred"] if TUNE["starred"] else 0
+    head = scored[: k - share]
+    starred = sorted((s for s in scored[k - share:] if s[1] > 0), key=lambda s: -s[2]["stargazerCount"])[:share]
+    return [n for _, _, n in head + starred]
+
+
+def render(shown, limit):
+    """Full lines for the first `limit`, then names and stars only, ten to a line (a quarter of the tokens)."""
+    out = ["rank. owner/name | stars | language | licence | last push | description | topics"]
+    for i, n in enumerate(shown[:limit], 1):
+        topics_n = ", ".join(topic_names(n)[:3])
         desc = re.sub(r"\s+", " ", n.get("description") or "")[:90]
-        print(f"{i}. {n['nameWithOwner']} | {stars(n['stargazerCount'])} | {(n.get('primaryLanguage') or {}).get('name', '-')}"
-              f" | {(n.get('licenseInfo') or {}).get('spdxId') or '-'} | {(n.get('pushedAt') or '-')[:7]} | {desc} | {topics_n}")
+        out.append(f"{i}. {n['nameWithOwner']} | {stars(n['stargazerCount'])} | {(n.get('primaryLanguage') or {}).get('name', '-')}"
+                   f" | {(n.get('licenseInfo') or {}).get('spdxId') or '-'} | {(n.get('pushedAt') or '-')[:7]} | {desc} | {topics_n}")
+    rest = shown[limit:]
+    if rest:
+        out.append(f"More matches, name and stars only ({limit + 1}-{len(shown)}):")
+        out += ["; ".join(f"{n['nameWithOwner']} {stars(n['stargazerCount'])}" for n in rest[j:j + 10])
+                for j in range(0, len(rest), 10)]
+    return "\n".join(out)
+
+
+def main():
+    a = parser().parse_args()
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # descriptions carry emoji; Windows consoles default to cp125x
+    if not GH:
+        sys.exit("The GitHub CLI is needed: install it from https://cli.github.com and run `gh auth login`.")
+    if not a.language:
+        a.language = next((LANGUAGES[t] for t in re.findall(r"[\w+#]+", a.need.lower()) if t in LANGUAGES), None)
+    terms = extract_terms(a.need)
+    pool, searches, searched = collect(a, terms)
+    shown = select(pool, terms, a)
+    print(f"Need: {a.need}")
+    print(f"{len(pool)} repositories from {searches} GitHub searches; topics searched: {', '.join(searched) or 'none'}. "
+          f"Lists, tutorials and courses left out. Best word match and popularity first, then the most-starred that "
+          f"match a word.")
+    print(render(shown, a.limit))
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 name: find-repo
 description: Find existing open-source projects on GitHub that do what the user needs (apps, libraries, CLIs, self-hosted tools, "an alternative to X"). Use when the user asks whether a tool exists, wants options or alternatives, or is about to build something that may already exist.
 summary: Searches GitHub many ways from a plain-language need, then you pick the best 5-10 of about 300 candidates.
-version: 0.1.0
+version: 0.2.0
 license: MIT
 tags: [github, open-source, search, research]
 keywords: [find repository, open source alternative, library search, self-hosted, github search]
@@ -27,14 +27,15 @@ filters only when the user gave them.
 python scripts/search.py "<need>" [--language Go] [--license MIT] [--min-stars 50] [--pushed-within 365] [--small]
 ```
 
-`--small` is for "little-known" or "small" projects (no popularity bonus). It takes about 20 seconds and prints about
-300 candidates, one per line: `rank. owner/name | stars | language | licence | last push | description | topics`.
-Do not show this list to the user.
+`--small` is for "little-known" or "small" projects (no popularity bonus). It takes about 20 seconds and prints 300
+candidates: 150 full lines (`rank. owner/name | stars | language | licence | last push | description | topics`), then
+150 more as names and stars only. Lists, tutorials and courses are already left out. Do not show this list to the user.
 
 ## 2. Judge every line
 
 The list is ordered by word match and popularity, not by fit, and the right projects are often far down: read all of
-it. Judge each candidate by what it does (description, topics, your own knowledge of the project):
+it, including the names-only part, where well-known projects with vague descriptions often are. Judge each candidate
+by what it does (description, topics, your own knowledge of the project):
 
 - Famous projects often describe themselves vaguely ("A black hole for Internet advertisements" is Pi-hole, a
   network-wide ad blocker). Keep a project you know fits, wherever it is in the list.
