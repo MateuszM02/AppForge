@@ -2,7 +2,7 @@
 name: find-repo
 description: Find existing open-source projects on GitHub that do what the user needs (apps, libraries, CLIs, self-hosted tools, "an alternative to X"). Use when the user asks whether a tool exists, wants options or alternatives, or is about to build something that may already exist.
 summary: Searches GitHub many ways from a plain-language need, then you pick the best 5-10 of about 300 candidates.
-version: 0.2.0
+version: 0.3.0
 license: MIT
 tags: [github, open-source, search, research]
 keywords: [find repository, open source alternative, library search, self-hosted, github search]
@@ -59,4 +59,5 @@ themselves (for "keeps track of the best LLMs", try "LLM benchmark leaderboard" 
 
 Give the best 5-10, best first, each with: `owner/name` (link `https://github.com/owner/name`), stars, last push, one
 line on why it fits, and a caveat if there is one (licence, inactive, platform). Group apps and libraries if both
-appear. Then offer to check 2-3 of them in depth with the check-repo skill.
+appear. If the user was about to build it, say whether to depend on the best one, fork it, borrow its approach or
+build anyway, and why. Then offer to check 2-3 of them in depth with the check-repo skill.
