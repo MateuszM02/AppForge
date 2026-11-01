@@ -18,7 +18,7 @@ without any model, in about 4k tokens. The agent picks the best 5-10 and tells y
 Describe the need in plain words ("self-hosted alternative to Notion", "Go library to build a CLI"). The script then:
 
 * **Searches many ways:** the specific words, "X to Y" phrases, `x2y` names and the GitHub topics named like the need,
-  6-15 searches paged in parallel into a pool of about 1,500 repositories
+  6-15 searches of 100 repositories each, run in parallel, into a pool of about 1,500 repositories
 * **Learns the domain's words:** a second round searches the topics the best matches share (Scrapy for "scrape",
   Logseq for "Notion")
 * **Drops the noise:** curated lists, tutorials, courses, homework and dotfiles, unless you asked for them
@@ -39,8 +39,29 @@ Describe the need in plain words ("self-hosted alternative to Notion", "Go libra
   archived, a fork, no or copyleft licence, no push for a year, one or two maintainers, more open issues than closed,
   no releases
 
-Filters when you need them: `--language Go`, `--license MIT`, `--min-stars 50`, `--pushed-within 365`, `--small` for
-little-known projects (no popularity bonus) and `--no-refine` for a faster search.
+## Flags
+
+Your agent adds these when your request calls for them; you can also ask for them by name.
+
+`python scripts/search.py "<need>" [flags]` (find-repo)
+
+| Flag | What it does |
+|---|---|
+| `--language Go` | Only repositories in that language; `javascript` also matches TypeScript. A language named in the need ("a Rust library for...") is picked up without it |
+| `--license MIT` | Only that licence (SPDX id); repeat for several: `--license MIT --license Apache-2.0` |
+| `--min-stars 50` | At least that many stars |
+| `--pushed-within 365` | Pushed in the last that many days, to skip abandoned projects |
+| `--small` | No popularity bonus, for "little-known" or "small" projects |
+| `--no-refine` | Skips the last round of searches: about 6 seconds faster, fewer niche finds |
+| `--limit 60` | How many candidates get full lines (about 35 tokens each) |
+| `--names 240` | How many more follow as names and stars only (about 7 tokens each) |
+
+`python scripts/health.py owner/name [owner/name ...] [--readme 1500]` (check-repo)
+
+| Argument | What it does |
+|---|---|
+| `owner/name ...` | Up to five repositories, as `owner/name` or GitHub URLs, in one GitHub call |
+| `--readme 1500` | Characters of each README to show; `--readme 0` leaves it out (about 400 tokens less per repository) |
 
 ## Who it is for
 
@@ -80,7 +101,7 @@ from tuning.
   candidates or keep look-alikes.
 * **English needs work best.** Queries are built from the need's words, and most repositories describe themselves in
   English.
-* **One GitHub account's limits apply.** A search makes 25-40 API calls, so dozens of searches an hour are fine;
+* **One GitHub account's limits apply.** A search makes about 20 API calls (one per GitHub search plus a few topic lookups), so dozens of searches an hour are fine;
   hundreds in a row may hit GitHub's rate limits.
 * **The test set leans to well-known projects.** The right answers were chosen by the author and checked on GitHub;
   numbers on very new or very obscure needs may differ.

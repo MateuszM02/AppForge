@@ -2,9 +2,9 @@
 """Find GitHub projects that do what a need describes; prints 300 candidates for the agent to judge. Python 3.8+
 standard library and the GitHub CLI (`gh auth login`).
   python search.py "self-hosted alternative to Notion" [--language Go] [--license MIT] [--min-stars 50]
-                   [--pushed-within 365] [--limit 60] [--names 240] [--pool 1000] [--no-refine]
+                   [--pushed-within 365] [--limit 60] [--names 240] [--no-refine]
 """
-import argparse, base64, datetime, json, math, re, shutil, subprocess, sys
+import argparse, datetime, json, math, re, shutil, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 
 STOPWORDS = set("""a an and are as at be but by can do for from has have how i if in into is it its me my need no not of
@@ -123,7 +123,7 @@ def build_queries(need, terms, a):
         x = m.group(1).lower()
         raw = [f"topic:{x}-alternative", f'"{x} alternative"'] + raw
     q = qualifiers(a)
-    return [f"{r} {q}" for r in dict.fromkeys(r for r in raw if r)][:14]
+    return [f"{r} {q}" for r in dict.fromkeys(r for r in raw if r)][: TUNE["queries"]]
 
 
 GH = shutil.which("gh")
@@ -151,38 +151,38 @@ def discover_topics(terms, need_tokens):
     return [n for n, _ in sorted(found.items(), key=lambda kv: -kv[1])[:5]]
 
 
-SEARCH = """search(query: %s, type: REPOSITORY, first: 100%s) { repositoryCount nodes { ... on Repository {
+SEARCH = """search(query: %s, type: REPOSITORY, first: 100) { nodes { ... on Repository {
   nameWithOwner description stargazerCount forkCount pushedAt isArchived isFork primaryLanguage { name }
   licenseInfo { spdxId } repositoryTopics(first: 8) { nodes { topic { name } } } } } }"""
 
 
-def fetch_pages(jobs):
-    """{(query, page): (count, nodes)}, ten searches at a time; search cursors are an encoded offset."""
-    def run(job):
-        q, page = job
-        after = ', after: "%s"' % base64.b64encode(f"cursor:{page * 100}".encode()).decode() if page else ""
+def fetch(queries):
+    """{query: first 100 repos}, one GraphQL search per call (more time out), ten at a time, one retry."""
+    def run(q):
         for _ in range(2):
             try:
-                s = (gh(["api", "graphql", "--input", "-"], json.dumps({"query": "{ " + SEARCH % (json.dumps(q), after) + " }"})).get("data") or {}).get("search")
+                s = (gh(["api", "graphql", "--input", "-"], json.dumps({"query": "{ " + SEARCH % json.dumps(q) + " }"})).get("data") or {}).get("search")
                 if s:
-                    return job, (s.get("repositoryCount", 0), s.get("nodes") or [])
+                    return q, s.get("nodes") or []
             except Exception:
                 pass
-        return job, (0, [])
+        return q, []
     with ThreadPoolExecutor(10) as ex:
-        return dict(ex.map(run, jobs))
+        return dict(ex.map(run, queries))
 
 
-def pool_of(results, queries, size):
+def pool_of(results, queries):
     """Unique repos in GitHub's order, no archived ones or forks; `_rrf` sums 1 / (60 + position) over searches."""
-    pool = {}
-    for page in range(10):
-        for q in queries:
-            for j, n in enumerate((results.get((q, page)) or (0, []))[1]):
-                if n and n.get("nameWithOwner") and not n["isArchived"] and not n["isFork"]:
-                    n = pool.setdefault(n["nameWithOwner"].lower(), n)
-                    n["_rrf"] = n.get("_rrf", 0) + 1 / (60 + page * 100 + j)
-    return list(pool.values())[:size]
+    pool, rrf = {}, {}
+    for q in queries:
+        for j, n in enumerate(results.get(q) or []):
+            if n and n.get("nameWithOwner") and not n["isArchived"] and not n["isFork"]:
+                k = n["nameWithOwner"].lower()
+                pool.setdefault(k, n)
+                rrf[k] = rrf.get(k, 0) + 1 / (60 + j)
+    for k, n in pool.items():
+        n["_rrf"] = rrf[k]
+    return list(pool.values())
 
 
 def stem(w):
@@ -199,7 +199,8 @@ def words_of(t):
 
 
 # Tuned on AppForge's test needs (scripts/eval-repo-finder.py).
-TUNE = {"junk": True, "prf_docs": 50, "prf_terms": 12, "prf_weight": 0.4, "starred": 3, "rrf": 0.5, "refine": 4}
+TUNE = {"junk": True, "prf_docs": 50, "prf_terms": 12, "prf_weight": 0.4, "starred": 3, "rrf": 0.5, "refine": 3,
+        "queries": 10, "round2": 5}
 JUNK_NAME = re.compile(r"^awesome|\d+[-_]days|(^|[-_.])(tutorials?|courses?|homework|assignments?|dotfiles|examples?|"
                        r"demos?|starter|boilerplate|interview|cheatsheet|roadmap|notes|learn|learning|study)([-_.]|$)")
 JUNK_TEXT = re.compile(r"\b(curated list|awesome list|a list of|collection of (resources|links|tools)|tutorials? (for|on)|"
@@ -285,7 +286,6 @@ def parser():
     ap.add_argument("--small", action="store_true", help="little-known projects: no popularity bonus")
     ap.add_argument("--limit", type=int, default=60, help="full lines")
     ap.add_argument("--names", type=int, default=240, help="further repos as names and stars only")
-    ap.add_argument("--pool", type=int, default=1000)
     ap.add_argument("--refine", action="store_true", default=True, help="one more round on topics the best share")
     ap.add_argument("--no-refine", dest="refine", action="store_false")
     return ap
@@ -302,26 +302,19 @@ def collect(a, terms):
     queries = list(dict.fromkeys(build_queries(a.need, terms, a) + [f"topic:{t} {q}" for t in topics]))
     if not queries:
         sys.exit("No searchable words in the need; describe what the project should do.")
-    first = fetch_pages([(x, 0) for x in queries])
-    # Round 2: topics the 30 best so far share (scrapy for "scrape")
-    expansion = shared_topics(rank(pool_of(first, queries, a.pool), terms, a.small, a.need)[:30], topics + terms["keywords"], 3)[:5]
-    more, expected = [], sum(len(v[1]) for v in first.values())
-    for page in range(1, 10):
-        for x in queries:
-            if expected < a.pool * 1.5 and first.get((x, 0), (0, []))[0] > page * 100:
-                more.append((x, page))
-                expected += 100
+    first = fetch(queries)
+    # Round 2: topics the 30 best so far share (scrapy for "scrape"). Further pages of round 1 added nothing in tests.
+    expansion = shared_topics(rank(pool_of(first, queries), terms, a.small, a.need)[:30], topics + terms["keywords"], 3)[: TUNE["round2"]]
     round2 = [f"topic:{t} {q}" for t in expansion]
-    results = dict(first)
-    results.update(fetch_pages(more + [(x, 0) for x in round2]))
+    results = {**first, **fetch(round2)}
     queries += round2
-    pool = pool_of(results, queries, a.pool + 500)
+    pool = pool_of(results, queries)
     if a.refine:  # round 3: most-starred repos under topics the 50 best share (bandwhich for bandwidth)
-        extra = shared_topics(rank(pool, terms, a.small, a.need)[:50], topics + expansion, 3, pool)
-        round3 = [f"topic:{t} sort:stars {q}" for t in extra[: TUNE["refine"]]]
-        results.update(fetch_pages([(x, 0) for x in round3]))
-        queries, expansion = queries + round3, expansion + extra[: TUNE["refine"]]
-        pool = pool_of(results, queries, a.pool + 500 + 100 * len(round3))
+        extra = shared_topics(rank(pool, terms, a.small, a.need)[:50], topics + expansion, 3, pool)[: TUNE["refine"]]
+        round3 = [f"topic:{t} sort:stars {q}" for t in extra]
+        results.update(fetch(round3))
+        queries, expansion = queries + round3, expansion + extra
+        pool = pool_of(results, queries)
     return pool, len(queries), topics + expansion
 
 

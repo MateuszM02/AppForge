@@ -24,13 +24,23 @@ Put the need in plain words: what the project should do, not how it is built. Ke
 filters only when the user gave them.
 
 ```
-python scripts/search.py "<need>" [--language Go] [--license MIT] [--min-stars 50] [--pushed-within 365] [--small]
+python scripts/search.py "<need>" [flags]
 ```
 
-`--small` is for "little-known" or "small" projects (no popularity bonus); `--no-refine` skips the last round of
-searches (about 6 seconds faster, finds fewer niche projects). It takes about 25 seconds and prints 300
-candidates: 60 full lines (`rank. owner/name | stars | language | licence | last push | description | topics`), then
-240 more as names and stars only. Lists, tutorials and courses are already left out. Do not show this list to the user.
+| Flag | What it does | Use it when |
+|---|---|---|
+| `--language Go` | Only repositories in that language (`javascript` also matches TypeScript). Named languages in the need ("a Rust library for...") are picked up without it | The user named a language |
+| `--license MIT` | Only that licence, as an SPDX id; repeat it for several (`--license MIT --license Apache-2.0`) | The user needs a licence, e.g. for commercial use |
+| `--min-stars 50` | At least that many stars | The user wants established projects |
+| `--pushed-within 365` | Pushed in the last that many days | The user wants maintained projects |
+| `--small` | No popularity bonus, so small projects rank as high as famous ones | The user asks for "little-known" or "small" projects |
+| `--no-refine` | Skips the last round of searches: about 6 seconds and 3 GitHub calls less, fewer niche finds | Speed matters and the need is common |
+| `--limit 60` | How many candidates get full lines (about 35 tokens each) | You need descriptions for more of them |
+| `--names 240` | How many more follow as names and stars only (about 7 tokens each) | You want a shorter or longer tail |
+
+It takes about 25 seconds and prints 300 candidates: 60 full lines
+(`rank. owner/name | stars | language | licence | last push | description | topics`), then 240 more as names and stars
+only. Lists, tutorials and courses are already left out. Do not show this list to the user.
 
 ## 2. Judge every line
 

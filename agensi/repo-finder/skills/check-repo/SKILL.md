@@ -21,9 +21,14 @@ Needs Python 3 and the GitHub CLI, logged in (`gh auth status`; if it fails, ask
 python scripts/health.py owner/name [owner/name ...] [--readme 1500]
 ```
 
-Up to five repositories per run, in one GitHub call. For each it prints what the project is, activity (commits in the
-last 90 days, last push, latest release), community (contributors, issues and pull requests, open against closed),
-licence and topics, risk flags, and the start of the README (`--readme 0` leaves it out).
+| Argument | What it does |
+|---|---|
+| `owner/name ...` | Up to five repositories, as `owner/name` or GitHub URLs, checked in one GitHub call |
+| `--readme 1500` | How many characters of each README to show (default 1500); `--readme 0` leaves the README out, about 400 tokens less per repository |
+
+For each it prints what the project is, activity (commits in the last 90 days, last push, latest release), community
+(contributors, issues and pull requests, open against closed), licence and topics, risk flags, and the start of the
+README. Use `--readme 0` when comparing projects you already know.
 
 ## Read the evidence
 
