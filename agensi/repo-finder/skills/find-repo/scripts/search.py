@@ -3,7 +3,7 @@
 judge. Python 3.8+ standard library only; GitHub access goes through the GitHub CLI (run `gh auth login` once).
 
   python search.py "self-hosted alternative to Notion" [--language Go] [--license MIT] [--min-stars 50]
-                   [--pushed-within 365] [--limit 150] [--names 150] [--pool 1000]
+                   [--pushed-within 365] [--limit 100] [--names 200] [--pool 1000]
 
 The need becomes 6-15 GitHub searches, plus a second round on topics the best matches share; lists and tutorials are
 dropped and the rest ranked by word match, GitHub's order and popularity.
@@ -285,8 +285,8 @@ def parser():
     ap.add_argument("--min-stars", type=int)
     ap.add_argument("--pushed-within", type=int, help="days")
     ap.add_argument("--small", action="store_true", help="little-known projects: no popularity bonus")
-    ap.add_argument("--limit", type=int, default=150, help="full lines")
-    ap.add_argument("--names", type=int, default=150, help="further repos as names and stars only")
+    ap.add_argument("--limit", type=int, default=100, help="full lines")
+    ap.add_argument("--names", type=int, default=200, help="further repos as names and stars only")
     ap.add_argument("--pool", type=int, default=1000)
     return ap
 
@@ -339,8 +339,8 @@ def render(shown, limit):
     """Full lines for the first `limit`, then names and stars only, ten to a line (a quarter of the tokens)."""
     out = ["rank. owner/name | stars | language | licence | last push | description | topics"]
     for i, n in enumerate(shown[:limit], 1):
-        topics_n = ", ".join(topic_names(n)[:3])
-        desc = re.sub(r"\s+", " ", n.get("description") or "")[:90]
+        topics_n = ", ".join(topic_names(n)[:2])
+        desc = re.sub(r"\s+", " ", n.get("description") or "")[:70]
         out.append(f"{i}. {n['nameWithOwner']} | {stars(n['stargazerCount'])} | {(n.get('primaryLanguage') or {}).get('name', '-')}"
                    f" | {(n.get('licenseInfo') or {}).get('spdxId') or '-'} | {(n.get('pushedAt') or '-')[:7]} | {desc} | {topics_n}")
     rest = shown[limit:]

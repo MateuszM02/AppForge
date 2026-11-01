@@ -28,8 +28,8 @@ python scripts/search.py "<need>" [--language Go] [--license MIT] [--min-stars 5
 ```
 
 `--small` is for "little-known" or "small" projects (no popularity bonus). It takes about 20 seconds and prints 300
-candidates: 150 full lines (`rank. owner/name | stars | language | licence | last push | description | topics`), then
-150 more as names and stars only. Lists, tutorials and courses are already left out. Do not show this list to the user.
+candidates: 100 full lines (`rank. owner/name | stars | language | licence | last push | description | topics`), then
+200 more as names and stars only. Lists, tutorials and courses are already left out. Do not show this list to the user.
 
 ## 2. Judge every line
 
