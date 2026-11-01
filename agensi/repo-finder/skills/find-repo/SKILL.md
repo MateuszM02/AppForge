@@ -27,7 +27,8 @@ filters only when the user gave them.
 python scripts/search.py "<need>" [--language Go] [--license MIT] [--min-stars 50] [--pushed-within 365] [--small]
 ```
 
-`--small` is for "little-known" or "small" projects (no popularity bonus). It takes about 20 seconds and prints 300
+`--small` is for "little-known" or "small" projects (no popularity bonus); `--no-refine` skips the last round of
+searches (about 6 seconds faster, finds fewer niche projects). It takes about 25 seconds and prints 300
 candidates: 60 full lines (`rank. owner/name | stars | language | licence | last push | description | topics`), then
 240 more as names and stars only. Lists, tutorials and courses are already left out. Do not show this list to the user.
 

@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
-"""Search GitHub for open-source projects that do what a need describes, and print 300 candidates for the agent to
-judge. Python 3.8+ standard library only; GitHub access goes through the GitHub CLI (run `gh auth login` once).
-
+"""Find GitHub projects that do what a need describes; prints 300 candidates for the agent to judge. Python 3.8+
+standard library and the GitHub CLI (`gh auth login`).
   python search.py "self-hosted alternative to Notion" [--language Go] [--license MIT] [--min-stars 50]
-                   [--pushed-within 365] [--limit 60] [--names 240] [--pool 1000]
-
-The need becomes 6-15 GitHub searches, plus a second round on topics the best matches share; lists and tutorials are
-dropped and the rest ranked by word match, GitHub's order and popularity.
+                   [--pushed-within 365] [--limit 60] [--names 240] [--pool 1000] [--no-refine]
 """
 import argparse, base64, datetime, json, math, re, shutil, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
@@ -15,12 +11,12 @@ STOPWORDS = set("""a an and are as at be but by can do for from has have how i i
 on or our please should so some that the this to up use using want we what which with would you your also any best good
 great new looking recommend suggest alternative alternatives open source opensource github repo repository project
 something like way lets let help want wants i'm im""".split())
-# Words every repository could use; searching on them only adds noise.
+# Words any repo could use.
 GENERIC = set("""app apps application tool tools software program utility service platform solution system convert
 converts converter conversion find get simple easy free file files document documents data basic small lightweight
 fast modern powerful awesome working support keep keeps track tracking manage managing nice best large medium big
 category categories run running build building make making work works own my""".split())
-# Kinds of project, platforms and languages narrow a search but never anchor one ("library sort:stars" is react).
+# Narrow a search but never anchor one ("library sort:stars" is react).
 ROLE = set("""library framework package module sdk toolkit component engine wrapper binding cli gui web desktop mobile
 android ios linux windows macos self-hosted local locally cloud api plugin extension browser server python javascript
 typescript java go rust""".split())
@@ -39,7 +35,7 @@ SYNONYMS = {"txt": ["text", "txt"], "text": ["text", "txt"], "word": ["docx", "w
             "ad": ["ad", "adblock", "ads", "advertisement"]}
 NOISE_TOPICS = {"hacktoberfest", "awesome", "awesome-list", "list", "open-source", "opensource", "github", "free",
                 "tool", "tools", "app", "application"}
-# Topics on hundreds of thousands of repos: searched alone they bring in famous projects of every kind.
+# Topics on huge numbers of repos of every kind.
 BROAD_TOPICS = set("""ai react reactjs vue nextjs nodejs node docker kubernetes-native machine-learning deep-learning
 artificial-intelligence ml nlp llm llms gpt chatgpt openai javascript typescript python golang java rust cpp c csharp
 php ruby swift kotlin android ios linux windows macos web webapp website frontend backend fullstack api rest
@@ -62,7 +58,7 @@ def content(t):
 
 
 def extract_terms(need):
-    """Concepts (spellings, most specific first), keywords, "X to Y" and two-word phrases, x2y names."""
+    """Concepts (spellings), keywords, "X to Y" and two-word phrases, x2y names."""
     low = re.sub(r"[/,;&]+|\bor\b|\band\b", " | ", need.lower())
     tokens = [t if t == "|" else singular(t.strip(".-")) for t in re.findall(r"[\w+#.-]+|\|", low)]
     tokens = [t for t in tokens if t]
@@ -142,7 +138,7 @@ def gh(args, body=None):
 
 
 def discover_topics(terms, need_tokens):
-    """GitHub topics named like the need (pdf-to-text, habit-tracker), from /search/topics for the first keywords."""
+    """GitHub topics named like the need (pdf-to-text, habit-tracker)."""
     found = {}
     def one(k):
         return gh(["api", "-X", "GET", "search/topics", "-f", f"q={k}", "-f", "per_page=30"]).get("items", [])
@@ -150,7 +146,6 @@ def discover_topics(terms, need_tokens):
         for items in ex.map(one, terms["keywords"][:4]):
             for t in items:
                 words = {singular(w) for w in t["name"].split("-")}
-                # Multi-word topics made only of the need's words (rss-reader, block-ads) say what the need says.
                 if len(words) > 1 and words <= need_tokens and t["name"] not in NOISE_TOPICS and t["name"] not in BROAD_TOPICS and not words <= ROLE:
                     found[t["name"]] = max(found.get(t["name"], 0), len(words) + (1 if t.get("curated") or t.get("featured") else 0))
     return [n for n, _ in sorted(found.items(), key=lambda kv: -kv[1])[:5]]
@@ -162,8 +157,7 @@ SEARCH = """search(query: %s, type: REPOSITORY, first: 100%s) { repositoryCount 
 
 
 def fetch_pages(jobs):
-    """jobs: (query, page), one GraphQL search each, ten at a time, one retry. GitHub's search cursors are an encoded
-    offset, so every page can be asked for at once. Returns {(query, page): (count, nodes)}."""
+    """{(query, page): (count, nodes)}, ten searches at a time; search cursors are an encoded offset."""
     def run(job):
         q, page = job
         after = ', after: "%s"' % base64.b64encode(f"cursor:{page * 100}".encode()).decode() if page else ""
@@ -180,8 +174,7 @@ def fetch_pages(jobs):
 
 
 def pool_of(results, queries, size):
-    """Deduplicated repos ordered by page, then query (GitHub's own order), without archived repos and forks; `_rrf`
-    sums 1 / (60 + position) over the searches that returned the repo (reciprocal rank fusion)."""
+    """Unique repos in GitHub's order, no archived ones or forks; `_rrf` sums 1 / (60 + position) over searches."""
     pool = {}
     for page in range(10):
         for q in queries:
@@ -193,7 +186,7 @@ def pool_of(results, queries, size):
 
 
 def stem(w):
-    """For word matching only: scraper, scraping and scrape meet at scrap; blocker and block at block."""
+    """scraper, scraping and scrape meet at scrap."""
     w = singular(w)
     for suf in ("ings", "ing", "ers", "er", "ed", "es", "e"):
         if w.endswith(suf) and len(w) - len(suf) >= 4:
@@ -205,8 +198,8 @@ def words_of(t):
     return [stem(w) for w in re.findall(r"[a-z0-9+#.]{2,}", (t or "").lower())]
 
 
-# Ranking settings, tuned offline on AppForge's 50 test needs (scripts/eval-repo-finder.py there).
-TUNE = {"junk": True, "prf_docs": 50, "prf_terms": 12, "prf_weight": 0.4, "starred": 3, "rrf": 0.5}
+# Tuned on AppForge's test needs (scripts/eval-repo-finder.py).
+TUNE = {"junk": True, "prf_docs": 50, "prf_terms": 12, "prf_weight": 0.4, "starred": 3, "rrf": 0.5, "refine": 4}
 JUNK_NAME = re.compile(r"^awesome|\d+[-_]days|(^|[-_.])(tutorials?|courses?|homework|assignments?|dotfiles|examples?|"
                        r"demos?|starter|boilerplate|interview|cheatsheet|roadmap|notes|learn|learning|study)([-_.]|$)")
 JUNK_TEXT = re.compile(r"\b(curated list|awesome list|a list of|collection of (resources|links|tools)|tutorials? (for|on)|"
@@ -293,11 +286,13 @@ def parser():
     ap.add_argument("--limit", type=int, default=60, help="full lines")
     ap.add_argument("--names", type=int, default=240, help="further repos as names and stars only")
     ap.add_argument("--pool", type=int, default=1000)
+    ap.add_argument("--refine", action="store_true", default=True, help="one more round on topics the best share")
+    ap.add_argument("--no-refine", dest="refine", action="store_false")
     return ap
 
 
 def collect(a, terms):
-    """All the GitHub searches for a need: returns (pool, searches run, topics searched)."""
+    """Returns (pool, searches run, topics searched)."""
     need_tokens = {singular(w) for w in re.findall(r"[\w+#]+", a.need.lower())} | {s for c in terms["concepts"] for s in c}
     try:
         topics = discover_topics(terms, need_tokens)
@@ -308,15 +303,8 @@ def collect(a, terms):
     if not queries:
         sys.exit("No searchable words in the need; describe what the project should do.")
     first = fetch_pages([(x, 0) for x in queries])
-    # Round 2: topics shared by the 30 best matches so far (scrapy for "scrape", logseq for "Notion").
-    best = [n for _, _, n in rank(pool_of(first, queries, a.pool), terms, a.small, a.need)[:30]]
-    seen = {t.replace("-", "") for t in topics + terms["keywords"]}
-    counts = {}
-    for n in best:
-        for t in set(topic_names(n)):
-            if t.replace("-", "") not in seen and t not in NOISE_TOPICS | BROAD_TOPICS and t not in ROLE and t not in LANGUAGES:
-                counts[t] = counts.get(t, 0) + 1
-    expansion = [t for t, c in sorted(counts.items(), key=lambda kv: -kv[1]) if c >= 3][:5]
+    # Round 2: topics the 30 best so far share (scrapy for "scrape")
+    expansion = shared_topics(rank(pool_of(first, queries, a.pool), terms, a.small, a.need)[:30], topics + terms["keywords"], 3)[:5]
     more, expected = [], sum(len(v[1]) for v in first.values())
     for page in range(1, 10):
         for x in queries:
@@ -326,12 +314,33 @@ def collect(a, terms):
     round2 = [f"topic:{t} {q}" for t in expansion]
     results = dict(first)
     results.update(fetch_pages(more + [(x, 0) for x in round2]))
-    return pool_of(results, queries + round2, a.pool + 500), len(queries) + len(round2), topics + expansion
+    queries += round2
+    pool = pool_of(results, queries, a.pool + 500)
+    if a.refine:  # round 3: most-starred repos under topics the 50 best share (bandwhich for bandwidth)
+        extra = shared_topics(rank(pool, terms, a.small, a.need)[:50], topics + expansion, 3, pool)
+        round3 = [f"topic:{t} sort:stars {q}" for t in extra[: TUNE["refine"]]]
+        results.update(fetch_pages([(x, 0) for x in round3]))
+        queries, expansion = queries + round3, expansion + extra[: TUNE["refine"]]
+        pool = pool_of(results, queries, a.pool + 500 + 100 * len(round3))
+    return pool, len(queries), topics + expansion
+
+
+def shared_topics(scored, searched, least, pool=None):
+    """Unsearched topics at least `least` of the scored repos carry, most shared first, or with `pool` by lift (how
+    much more often they carry them than the pool does)."""
+    seen, counts = {t.replace("-", "") for t in searched}, {}
+    for _, _, n in scored:
+        for t in set(topic_names(n)):
+            if t.replace("-", "") not in seen and t not in NOISE_TOPICS | BROAD_TOPICS and t not in ROLE and t not in LANGUAGES:
+                counts[t] = counts.get(t, 0) + 1
+    counts = {t: c for t, c in counts.items() if c >= least}
+    if pool:
+        counts = {t: c * math.log(len(pool) / sum(1 for n in pool if t in topic_names(n))) for t, c in counts.items()}
+    return sorted(counts, key=lambda t: -counts[t])
 
 
 def select(pool, terms, a):
-    """The --limit + --names repos to print: best match first, then the most-starred that match a word (famous
-    projects often describe themselves vaguely)."""
+    """Best matches first, then the most-starred that match a word (famous projects describe themselves vaguely)."""
     scored = rank(pool, terms, a.small, a.need)
     k = min(a.limit + a.names, len(scored))
     share = k // TUNE["starred"] if TUNE["starred"] else 0
@@ -341,7 +350,7 @@ def select(pool, terms, a):
 
 
 def render(shown, limit):
-    """Full lines for the first `limit`, then names and stars only, ten to a line (a quarter of the tokens)."""
+    """Full lines for the first `limit`, then names and stars only."""
     out = ["rank. owner/name | stars | language | licence | last push | description | topics"]
     for i, n in enumerate(shown[:limit], 1):
         topics_n = ", ".join(topic_names(n)[:2])
@@ -358,7 +367,7 @@ def render(shown, limit):
 
 def main():
     a = parser().parse_args()
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # descriptions carry emoji; Windows consoles default to cp125x
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # emoji on Windows consoles
     if not GH:
         sys.exit("The GitHub CLI is needed: install it from https://cli.github.com and run `gh auth login`.")
     if not a.language:

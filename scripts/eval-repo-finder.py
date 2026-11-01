@@ -2,7 +2,7 @@
 """Offline tuning for the repo-finder skill's search.py (agensi/repo-finder) on tests/search-gold.json
 (or another gold file with --gold, such as tests/search-gold-niche.json).
 
-  python scripts/eval-repo-finder.py [--fetch] [--pool 2500] [--variants "base 3000:junk=true,prf_terms=12"]
+  python scripts/eval-repo-finder.py [--fetch] [--refine] [--gold FILE] [--pool 2500] [--variants "base 3000:junk=true,prf_terms=12"]
                                      [--k 60,100,150,300] [--split even|odd|all]
 
 --fetch runs every gold prompt's GitHub searches once (3 prompts at a time) with a large pool and saves the pools;
@@ -32,7 +32,8 @@ def data_dir():
 
 
 CACHE = os.path.join(data_dir(), "cache", "eval", "repo-finder")
-POOLS = os.path.join(CACHE, "pools")  # one folder of fetched pools per gold file
+POOLS = os.path.join(CACHE, "pools")  # one folder of fetched pools per gold file (and per --refine)
+REFINE = False
 real_gh = search.gh
 
 
@@ -63,7 +64,7 @@ def fetch(i, item, pool):
     f = os.path.join(POOLS, f"{i:02d}.json")
     if os.path.exists(f):
         return
-    a = args_for(item["prompt"], pool=pool)
+    a = args_for(item["prompt"], pool=pool, refine=REFINE)
     nodes, searches, topics = search.collect(a, search.extract_terms(item["prompt"]))
     json.dump({"prompt": item["prompt"], "pool": nodes, "searches": searches, "topics": topics}, open(f, "w", encoding="utf-8"))
 
@@ -95,6 +96,7 @@ def lines_of(item, nodes, limit, names, pool_size, tune):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fetch", action="store_true")
+    ap.add_argument("--refine", action="store_true", help="fetch and rank pools made with search.py --refine")
     ap.add_argument("--gold", default=os.path.join(ROOT, "tests", "search-gold.json"))
     ap.add_argument("--pool", type=int, default=2500)
     ap.add_argument("--variants", default="base", help='space-separated: base, or "<pool>:key=value,..." (search.TUNE)')
@@ -103,9 +105,10 @@ def main():
     ap.add_argument("--split", default="even", choices=["even", "odd", "all"])
     a = ap.parse_args()
     os.makedirs(os.path.join(CACHE, "gh"), exist_ok=True)
-    global POOLS
+    global POOLS, REFINE
+    REFINE = a.refine
     stem = os.path.splitext(os.path.basename(a.gold))[0]
-    POOLS = os.path.join(CACHE, "pools" if stem == "search-gold" else "pools-" + stem)
+    POOLS = os.path.join(CACHE, ("pools" if stem == "search-gold" else "pools-" + stem) + ("-refine" if a.refine else ""))
     os.makedirs(POOLS, exist_ok=True)
     gold = json.load(open(a.gold, encoding="utf-8"))["prompts"]
     if a.fetch:
