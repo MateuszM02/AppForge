@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Offline tuning for the repo-finder skill's search.py (agensi/repo-finder) on tests/search-gold.json
+"""Offline tuning for the repo-finder skill's search.py (github.com/MateuszM02/Agensi, cloned next to this repository
+or at AGENSI_DIR) on tests/search-gold.json
 (or another gold file with --gold, such as tests/search-gold-niche.json).
 
   python scripts/eval-repo-finder.py [--fetch] [--refine] [--gold FILE] [--pool 2500] [--variants "base 3000:junk=true,prf_terms=12"]
@@ -16,7 +17,8 @@ import argparse, hashlib, json, os, sys, types
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "agensi", "repo-finder", "skills", "find-repo", "scripts"))
+AGENSI = os.environ.get("AGENSI_DIR") or os.path.join(os.path.dirname(ROOT), "Agensi")
+sys.path.insert(0, os.path.join(AGENSI, "repo-finder", "skills", "find-repo", "scripts"))
 import search  # noqa: E402
 
 
