@@ -71,7 +71,8 @@ def agent_terms(need):
     """{"also": [...], "topics": [...]} as an agent following find-repo's SKILL.md would pass them; asked once per need
     model and instructions, then cached for good."""
     skill = open(os.path.join(AGENSI, "repo-finder", "skills", "find-repo", "SKILL.md"), encoding="utf-8").read()
-    section = skill[skill.index("The script knows only"): skill.index("| Flag |")].strip()
+    end = skill.find("#### Flags") if "#### Flags" in skill else skill.index("| Flag |")
+    section = skill[skill.index("The script knows only"): end].strip()
     # Keyed by model, instructions and need: new instructions ask again, the same ones never do.
     f = os.path.join(CACHE, "agent", hashlib.sha1(f"{AGENT_MODEL}|{section}|{need}".encode()).hexdigest() + ".json")
     if os.path.exists(f):
