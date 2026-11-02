@@ -39,6 +39,7 @@ def data_dir():
 CACHE = os.path.join(data_dir(), "cache", "eval", "repo-finder")
 POOLS = os.path.join(CACHE, "pools")  # one folder of fetched pools per gold file (and per --refine)
 REFINE = AGENT = False
+AGENT_FROM = None  # a pools folder whose agent words to reuse
 AGENT_MODEL = "claude-haiku-5-5"
 real_gh = search.gh
 
@@ -105,7 +106,11 @@ def fetch(i, item, pool):
     f = os.path.join(POOLS, f"{i:02d}.json")
     if os.path.exists(f):
         return
-    ag = agent_terms(item["prompt"]) if AGENT else {"also": [], "topics": []}
+    if AGENT_FROM:  # the words an earlier run used, read from its pools: no model is asked
+        old = json.load(open(os.path.join(AGENT_FROM, f"{i:02d}.json"), encoding="utf-8"))
+        ag = {"also": old["also"], "topics": old["agent_topics"]}
+    else:
+        ag = agent_terms(item["prompt"]) if AGENT else {"also": [], "topics": []}
     a = args_for(item["prompt"], pool=pool, refine=REFINE, also=ag["also"], topics=ag["topics"])
     nodes, searches, topics = search.collect(a, search.extract_terms(item["prompt"]))
     json.dump({"prompt": item["prompt"], "pool": nodes, "searches": searches, "topics": topics, "also": ag["also"],
@@ -142,6 +147,7 @@ def main():
     ap.add_argument("--refine", action="store_true", help="fetch and rank pools made with search.py --refine")
     ap.add_argument("--agent", action="store_true", help="with the agent's --also phrases and --topics (see above)")
     ap.add_argument("--tag", default="", help="names a separate folder of pools, e.g. for another search.py version")
+    ap.add_argument("--agent-from", default="", help="reuse the agent words of another --tag's pools (implies --agent)")
     ap.add_argument("--only", default="", help="comma-separated prompt indices instead of --split")
     ap.add_argument("--gold", default=os.path.join(ROOT, "tests", "search-gold.json"))
     ap.add_argument("--pool", type=int, default=2500)
@@ -152,12 +158,14 @@ def main():
     a = ap.parse_args()
     os.makedirs(os.path.join(CACHE, "gh"), exist_ok=True)
     os.makedirs(os.path.join(CACHE, "agent"), exist_ok=True)
-    global POOLS, REFINE, AGENT
-    REFINE, AGENT = a.refine, a.agent
+    global POOLS, REFINE, AGENT, AGENT_FROM
+    REFINE, AGENT = a.refine, a.agent or bool(a.agent_from)
     stem = os.path.splitext(os.path.basename(a.gold))[0]
     POOLS = os.path.join(CACHE, ("pools" if stem == "search-gold" else "pools-" + stem) + ("-refine" if a.refine else "")
                          + ("-agent" if a.agent else "") + (f"-{a.tag}" if a.tag else ""))
     os.makedirs(POOLS, exist_ok=True)
+    if a.agent_from:
+        AGENT_FROM = POOLS.replace("-agent-" + a.tag, "-agent-" + a.agent_from)
     gold = json.load(open(a.gold, encoding="utf-8"))["prompts"]
     if a.only:
         idx = [int(x) for x in a.only.split(",")]
