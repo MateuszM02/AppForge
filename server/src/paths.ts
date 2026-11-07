@@ -24,7 +24,11 @@ export function dataDir(): string {
 
 export const paths = {
   get config() { return path.join(dataDir(), 'config.json'); },
-  get memory() { return path.join(dataDir(), 'memory'); },
+  /** APPFORGE_MEMORY_DIR moves only the memory, e.g. into a private git repo shared between machines. */
+  get memory() {
+    const dir = process.env.APPFORGE_MEMORY_DIR;
+    return dir ? path.resolve(dir) : path.join(dataDir(), 'memory');
+  },
   get cache() { return path.join(dataDir(), 'cache'); },
   get models() { return path.join(dataDir(), 'models'); },
   get logs() { return path.join(dataDir(), 'logs'); },

@@ -161,7 +161,7 @@ Windows `%LOCALAPPDATA%\AppForge`, macOS `~/Library/Application Support/AppForge
 | Path | What |
 |---|---|
 | `config.json` | your settings (only what differs from the defaults) |
-| `memory/` | the memory: `INDEX.md`, `FORMAT.md`, `global/`, `projects/<key>/`, `archive/` |
+| `memory/` | the memory: `INDEX.md`, `FORMAT.md`, `global/`, `projects/<key>/`, `archive/` (or `APPFORGE_MEMORY_DIR`) |
 | `cache/` | GitHub cache, skill catalog, RepoRadar cache and logs |
 | `models/` | the repo-search models of your profile |
 | `browser/` | browser profiles, cookies, downloads |
@@ -196,7 +196,9 @@ setting can also be an environment variable `APPFORGE_<SECTION>_<KEY>` (e.g. `AP
 | `updateCheck` | true | look for a newer AppForge at start |
 
 Other environment variables: `GITHUB_TOKEN` / `GH_TOKEN` (GitHub access), `APPFORGE_HOME` (data folder),
-`APPFORGE_LOG_LEVEL` (`debug`, `info`, ...), `APPFORGE_NO_UPDATE_CHECK=1`.
+`APPFORGE_MEMORY_DIR` (memory folder only, for example a private git repo synced between machines; `hippo.db` is
+a search index rebuilt from the Markdown files, so it can stay out of git), `APPFORGE_LOG_LEVEL` (`debug`,
+`info`, ...), `APPFORGE_NO_UPDATE_CHECK=1`.
 
 ## Other MCP clients
 
