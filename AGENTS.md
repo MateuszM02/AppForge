@@ -17,6 +17,9 @@ this repository; the user-facing docs are in README.md.
   and these rule files) bumps it: `0.1.0` -> `0.2.0` (or `0.1.1` for a fix). The installers rebuild only when it
   changed, and running servers warn when the folder or GitHub has a newer one.
 - Keep `plugin/.claude-plugin/plugin.json` at the same version.
+- For Claude Code, `.claude/hooks/version-gate.py` checks this on `git commit`: an app change needs a version newer
+  than the pushed one, with `package-lock.json` and `plugin.json` equal to it. It compares against the pushed
+  version, so it catches a missing bump before each push rather than in every commit.
 
 ## Code
 
